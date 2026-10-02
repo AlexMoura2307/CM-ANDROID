@@ -15,3 +15,5 @@ Base upstream: openfootmanager/openfootmanager
 Revisão fixada: `8f6659f5022edcb80529661b0d4d416430c9b6b9`
 
 A adaptação continua sob GPLv3.
+
+Build Android automático configurado.
