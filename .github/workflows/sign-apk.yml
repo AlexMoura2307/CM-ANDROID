@@ -1,0 +1,69 @@
+name: Sign CM Test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sign-apk.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  sign-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unsigned APK from successful build
+        uses: actions/download-artifact@v4
+        with:
+          name: CM-Android-APK
+          path: unsigned
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: AlexMoura2307/CM-ANDROID
+          run-id: 37073546856
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Ensure Android build tools
+        shell: bash
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          if [ ! -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" ]; then
+            "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+          fi
+
+      - name: Create test signing key and sign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK=/usr/local/lib/android/sdk
+          BT="$SDK/build-tools/35.0.0"
+          UNSIGNED="$(find unsigned -type f -name '*.apk' | head -n 1)"
+          test -n "$UNSIGNED"
+
+          keytool -genkeypair -v             -keystore cm-test.keystore             -storepass android             -alias cmtest             -keypass android             -dname "CN=CM Android Test,O=CM,C=BR"             -keyalg RSA -keysize 2048 -validity 10000
+
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" CM-Android-Teste-aligned.apk
+
+          "$BT/apksigner" sign             --ks cm-test.keystore             --ks-key-alias cmtest             --ks-pass pass:android             --key-pass pass:android             --out CM-Android-Teste.apk             CM-Android-Teste-aligned.apk
+
+          "$BT/apksigner" verify --verbose --print-certs CM-Android-Teste.apk
+          ls -lh CM-Android-Teste.apk
+
+      - name: Upload signed test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-Android-Teste-Instalavel
+          path: CM-Android-Teste.apk
+          if-no-files-found: error
+          retention-days: 14
