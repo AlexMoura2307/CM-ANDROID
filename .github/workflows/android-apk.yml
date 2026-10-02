@@ -1,0 +1,91 @@
+name: Build CM Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/android-apk.yml"
+      - "scripts/prepare_cm.py"
+      - "README.md"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout CM build repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager base
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Prepare CM customizations
+        run: python3 scripts/prepare_cm.py
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: upstream/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK / NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install frontend dependencies
+        working-directory: upstream
+        run: npm ci
+
+      - name: Initialize Tauri Android project
+        working-directory: upstream
+        run: npm run tauri android init
+
+      - name: Build APK ARM64
+        working-directory: upstream
+        run: npm run tauri android build -- --apk --target aarch64
+
+      - name: Locate APK
+        id: apk
+        shell: bash
+        run: |
+          echo "Generated APK files:"
+          find upstream/src-tauri/gen/android -type f -name "*.apk" -print
+          APK_DIR="$(find upstream/src-tauri/gen/android -type f -name "*.apk" -printf '%h\n' | head -n 1)"
+          if [ -z "$APK_DIR" ]; then
+            echo "No APK generated."
+            exit 1
+          fi
+          echo "apk_dir=$APK_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload CM APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-Android-APK
+          path: ${{ steps.apk.outputs.apk_dir }}/*.apk
+          if-no-files-found: error
+          retention-days: 14
