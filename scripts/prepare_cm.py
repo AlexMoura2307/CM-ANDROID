@@ -31,7 +31,8 @@ resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources["resources/cm-brasil-2026-fase1.ofm"] = "packages/cm-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-# Base Brasil embutida: copia o pacote de resources para a pasta interna de pacotes
+# Base Brasil embutida: grava os bytes diretamente no app-data.
+# Isso evita depender do resource_dir no Android, que não expôs o .ofm como esperado.
 world_path = root / "src-tauri" / "src" / "commands" / "world.rs"
 world_src = world_path.read_text(encoding="utf-8")
 if "ensure_bundled_cm_package" not in world_src:
@@ -45,26 +46,24 @@ if "ensure_bundled_cm_package" not in world_src:
 """
     helper = marker + r'''
 
-fn ensure_bundled_cm_package(app_handle: &tauri::AppHandle) -> Result<(), String> {
-    let resource_dir = app_handle.path().resource_dir().map_err(|e| e.to_string())?;
-    let bundled = resource_dir.join("packages").join("cm-brasil-2026-fase1.ofm");
-    if !bundled.exists() {
-        return Ok(());
-    }
+const CM_BRASIL_PACKAGE_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/resources/cm-brasil-2026-fase1.ofm"
+));
 
+fn ensure_bundled_cm_package(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let dir = packages_dir(app_handle)?;
     std::fs::create_dir_all(&dir)
         .map_err(|_| "be.error.package.installFailed".to_string())?;
     let dest = dir.join("cm-brasil-2026-fase1.ofm");
 
-    let should_copy = match (std::fs::metadata(&bundled), std::fs::metadata(&dest)) {
-        (Ok(src), Ok(dst)) => src.len() != dst.len(),
-        (Ok(_), Err(_)) => true,
-        _ => false,
+    let should_write = match std::fs::metadata(&dest) {
+        Ok(meta) => meta.len() != CM_BRASIL_PACKAGE_BYTES.len() as u64,
+        Err(_) => true,
     };
 
-    if should_copy {
-        std::fs::copy(&bundled, &dest)
+    if should_write {
+        std::fs::write(&dest, CM_BRASIL_PACKAGE_BYTES)
             .map_err(|_| "be.error.package.installFailed".to_string())?;
     }
     Ok(())
