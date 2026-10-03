@@ -919,3 +919,90 @@ if marker not in css:
 css_path.write_text(css, encoding="utf-8")
 
 print("CM Android preparado em", root)
+
+
+# Elenco mobile compacto: remove filtros/resumo visual e enxuga a tabela.
+squad_path = root / "src" / "components" / "squad" / "SquadRosterView.tsx"
+squad = squad_path.read_text(encoding="utf-8")
+
+def _wrap_hidden_block(source: str, start_marker: str, end_marker: str, end_inclusive: bool = False) -> str:
+    start = source.find(start_marker)
+    if start < 0:
+        return source
+    end = source.find(end_marker, start)
+    if end < 0:
+        return source
+    if end_inclusive:
+        end += len(end_marker)
+    block = source[start:end]
+    return source[:start] + "{false && (\n" + block + "\n)}" + source[end:]
+
+# Remove visualmente o card inteiro de pesquisa/filtros/contadores.
+first_card = '      <Card>\n        <div className="p-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1.3fr)_220px_220px_auto] gap-3 items-end">'
+second_card = '      <Card>\n        <div className="p-4 border-b border-gray-100 dark:border-navy-600 bg-linear-to-r from-navy-700 to-navy-800 rounded-t-xl">'
+first_start = squad.find(first_card)
+second_start = squad.find(second_card, first_start + 1) if first_start >= 0 else -1
+if first_start >= 0 and second_start >= 0:
+    first_block = squad[first_start:second_start]
+    squad = squad[:first_start] + "      {false && (\n" + first_block + "      )}\n\n" + squad[second_start:]
+
+# Remove visualmente o cabeçalho/card "Elenco do [clube]" e cobertura de funções.
+header_start_marker = '        <div className="p-4 border-b border-gray-100 dark:border-navy-600 bg-linear-to-r from-navy-700 to-navy-800 rounded-t-xl">'
+table_start_marker = '        <div className="overflow-x-auto">'
+header_start = squad.find(header_start_marker)
+table_start = squad.find(table_start_marker, header_start + 1) if header_start >= 0 else -1
+if header_start >= 0 and table_start >= 0:
+    header_block = squad[header_start:table_start]
+    squad = squad[:header_start] + "        {false && (\n" + header_block + "        )}\n" + squad[table_start:]
+
+# Oculta as colunas de encaixe na formação, encaixe no estilo e contrato.
+for col in ("fit", "style", "contract"):
+    start_marker = f'                <SquadSortHeader\n                  col="{col}"'
+    start = squad.find(start_marker)
+    if start >= 0:
+        end = squad.find('                />', start)
+        if end >= 0:
+            end += len('                />')
+            block = squad[start:end]
+            squad = squad[:start] + "                {false && (\n" + block + "\n                )}" + squad[end:]
+
+formation_comment = '                      {/* Formation fit:'
+style_comment = '                      {/* Style fit */}'
+traits_comment = '                      {/* Traits — all of them, wraps as needed */}'
+contract_comment = '                      {/* Contract: years + risk + expires_on + market pills */}'
+actions_comment = '                      {/* Actions (last column) */}'
+
+formation_start = squad.find(formation_comment)
+style_start = squad.find(style_comment, formation_start + 1) if formation_start >= 0 else -1
+if formation_start >= 0 and style_start >= 0:
+    block = squad[formation_start:style_start]
+    squad = squad[:formation_start] + "                      {false && (<>\n" + block + "                      </>)}\n" + squad[style_start:]
+
+style_start = squad.find(style_comment)
+traits_start = squad.find(traits_comment, style_start + 1) if style_start >= 0 else -1
+if style_start >= 0 and traits_start >= 0:
+    block = squad[style_start:traits_start]
+    squad = squad[:style_start] + "                      {false && (<>\n" + block + "                      </>)}\n" + squad[traits_start:]
+
+contract_start = squad.find(contract_comment)
+actions_start = squad.find(actions_comment, contract_start + 1) if contract_start >= 0 else -1
+if contract_start >= 0 and actions_start >= 0:
+    block = squad[contract_start:actions_start]
+    squad = squad[:contract_start] + "                      {false && (<>\n" + block + "                      </>)}\n" + squad[actions_start:]
+
+# Tabela mais compacta no celular: menos altura e menos largura por linha/célula.
+squad = squad.replace('className="flex flex-col gap-4"', 'className="flex flex-col gap-2"', 1)
+squad = squad.replace('className="w-full text-left border-collapse"', 'className="w-full table-auto text-left text-xs border-collapse"', 1)
+squad = squad.replace('py-2.5 px-4', 'py-1 px-2')
+squad = squad.replace('className="flex items-center gap-3"', 'className="flex items-center gap-2"')
+squad = squad.replace(
+    '<PlayerAvatar player={player} />',
+    '<PlayerAvatar player={player} className="h-7 w-7 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-navy-700 flex items-center justify-center text-[10px] font-heading font-bold text-gray-500 dark:text-gray-300" />',
+)
+squad = squad.replace('font-semibold text-sm text-gray-900', 'font-semibold text-xs text-gray-900')
+squad = squad.replace('text-sm font-medium text-gray-600', 'text-xs font-medium text-gray-600')
+squad = squad.replace('text-sm text-gray-600 dark:text-gray-400 tabular-nums', 'text-xs text-gray-600 dark:text-gray-400 tabular-nums')
+squad = squad.replace('text-sm text-gray-500 dark:text-gray-400 tabular-nums', 'text-xs text-gray-500 dark:text-gray-400 tabular-nums')
+squad = squad.replace('className="py-1 px-2 w-28"', 'className="py-1 px-2 w-20"')
+
+squad_path.write_text(squad, encoding="utf-8")
