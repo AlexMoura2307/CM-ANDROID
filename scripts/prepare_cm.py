@@ -22,11 +22,11 @@ if "" in lock.get("packages", {}):
     lock["packages"][""]["name"] = "cm-football-manager"
 lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-# Tauri / Android
+# Tauri / Android - versão de teste instalada ao lado do CM atual
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "CM"
-conf["identifier"] = "com.cm.footballmanager"
+conf["productName"] = "CM Teste"
+conf["identifier"] = "com.cm.footballmanager.test"
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources["resources/cm-brasil-2026-fase1.ofm"] = "packages/cm-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -99,7 +99,6 @@ i18n = re.sub(
 i18n_path.write_text(i18n, encoding="utf-8")
 
 # Português do Brasil também nos defaults persistidos do frontend e backend.
-# Assim um APK novo não volta ao inglês quando o settings store termina de carregar.
 settings_store_path = root / "src" / "store" / "settingsStore.ts"
 settings_store = settings_store_path.read_text(encoding="utf-8")
 settings_store = settings_store.replace('  language: "en",', '  language: "pt-BR",', 1)
@@ -120,7 +119,6 @@ normalize_marker = """fn normalize_loaded_settings(mut settings: AppSettings) ->
     settings.currency = currency::normalize_currency_code(&settings.currency)
 """
 normalize_repl = """fn normalize_loaded_settings(mut settings: AppSettings) -> AppSettings {
-    // Migra instalações antigas do CM que ainda gravaram o idioma padrão como inglês.
     if settings.language == "en" {
         settings.language = "pt-BR".to_string();
     }
@@ -142,7 +140,7 @@ app_path = root / "src" / "App.tsx"
 app = app_path.read_text(encoding="utf-8")
 app = app.replace(
     'await getCurrentWindow().setTitle(`Openfoot Manager ${formatAppVersion()}`);',
-    'await getCurrentWindow().setTitle(`CM ${formatAppVersion()}`);',
+    'await getCurrentWindow().setTitle(`CM Teste ${formatAppVersion()}`);',
 )
 app_path.write_text(app, encoding="utf-8")
 
@@ -177,10 +175,7 @@ menu = menu.replace(
 )
 menu_path.write_text(menu, encoding="utf-8")
 
-# ---------------------------------------------------------------------------
 # CM mobile UI: menu lateral vira drawer acionado por hamburger.
-# Mantém todas as abas/funções originais e altera somente a apresentação.
-# ---------------------------------------------------------------------------
 sidebar_path = root / "src" / "components" / "dashboard" / "DashboardSidebar.tsx"
 sidebar = sidebar_path.read_text(encoding="utf-8")
 sidebar = sidebar.replace(
@@ -294,7 +289,7 @@ dashboard = dashboard.replace(
 )
 dashboard_path.write_text(dashboard, encoding="utf-8")
 
-# Cabeçalho mais compacto e preparado para o botão hamburger no celular.
+# Cabeçalho mais compacto.
 header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
 header = header_path.read_text(encoding="utf-8")
 header = header.replace(
@@ -329,7 +324,7 @@ header = header.replace(
 )
 header_path.write_text(header, encoding="utf-8")
 
-# Área de conteúdo mais compacta no telefone.
+# Área de conteúdo mais compacta.
 workspace_path = root / "src" / "components" / "dashboard" / "DashboardWorkspaceContent.tsx"
 workspace = workspace_path.read_text(encoding="utf-8")
 workspace = workspace.replace(
@@ -344,10 +339,7 @@ workspace = workspace.replace(
 )
 workspace_path.write_text(workspace, encoding="utf-8")
 
-# ---------------------------------------------------------------------------
 # Atributos: números no lugar de barras.
-# Mantém ?? para atributos ainda não revelados pelo scouting.
-# ---------------------------------------------------------------------------
 attrs_path = root / "src" / "components" / "playerProfile" / "PlayerProfileAttributesCard.tsx"
 attrs = attrs_path.read_text(encoding="utf-8")
 attrs = attrs.replace('import { getAttributeColors } from "../../lib/playerAttributeDisplay";\n', '')
@@ -381,7 +373,6 @@ attrs = attrs.replace(
     "",
     1,
 )
-# A função placeholder deixa de ser necessária sem barras ocultas.
 attrs = re.sub(
     r'// Deterministic placeholder bar width.*?\nfunction placeholderWidth\(name: string\): number \{.*?\n\}\n\n',
     '',
