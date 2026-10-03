@@ -27,7 +27,65 @@ conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
 conf["productName"] = "CM"
 conf["identifier"] = "com.cm.footballmanager"
+resources = conf.setdefault("bundle", {}).setdefault("resources", {})
+resources["resources/cm-brasil-2026-fase1.ofm"] = "packages/cm-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+# Base Brasil embutida: copia o pacote de resources para a pasta interna de pacotes
+world_path = root / "src-tauri" / "src" / "commands" / "world.rs"
+world_src = world_path.read_text(encoding="utf-8")
+if "ensure_bundled_cm_package" not in world_src:
+    marker = """fn packages_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    Ok(app_data_dir.join("packages"))
+}
+"""
+    helper = marker + r'''
+
+fn ensure_bundled_cm_package(app_handle: &tauri::AppHandle) -> Result<(), String> {
+    let resource_dir = app_handle.path().resource_dir().map_err(|e| e.to_string())?;
+    let bundled = resource_dir.join("packages").join("cm-brasil-2026-fase1.ofm");
+    if !bundled.exists() {
+        return Ok(());
+    }
+
+    let dir = packages_dir(app_handle)?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|_| "be.error.package.installFailed".to_string())?;
+    let dest = dir.join("cm-brasil-2026-fase1.ofm");
+
+    let should_copy = match (std::fs::metadata(&bundled), std::fs::metadata(&dest)) {
+        (Ok(src), Ok(dst)) => src.len() != dst.len(),
+        (Ok(_), Err(_)) => true,
+        _ => false,
+    };
+
+    if should_copy {
+        std::fs::copy(&bundled, &dest)
+            .map_err(|_| "be.error.package.installFailed".to_string())?;
+    }
+    Ok(())
+}
+'''
+    if marker not in world_src:
+        raise RuntimeError("packages_dir marker not found")
+    world_src = world_src.replace(marker, helper)
+
+    list_marker = """pub fn list_installed_packages(
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<ofm_core::generator::PackageInfo>, String> {
+    info!("[cmd] list_installed_packages");
+"""
+    list_repl = list_marker + """    ensure_bundled_cm_package(&app_handle)?;
+"""
+    if list_marker not in world_src:
+        raise RuntimeError("list_installed_packages marker not found")
+    world_src = world_src.replace(list_marker, list_repl)
+
+world_path.write_text(world_src, encoding="utf-8")
 
 # Português do Brasil como padrão
 i18n_path = root / "src" / "i18n" / "index.ts"
