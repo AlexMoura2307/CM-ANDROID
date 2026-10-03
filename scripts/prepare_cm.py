@@ -243,9 +243,9 @@ new_sidebar_block = """  return (
         type="button"
         onClick={() => setIsSidebarOpen(true)}
         aria-label={t("dashboard.expandSidebar")}
-        className="fixed left-3 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-lg bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"
+        className="fixed left-3 top-3 z-30 flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-6 w-6" />
       </button>
 
       {isSidebarOpen ? (
