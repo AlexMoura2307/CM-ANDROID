@@ -442,7 +442,7 @@ if section_start < 0 or section_end < 0:
     raise RuntimeError("PlayerProfile content markers not found")
 
 tabbed_content = r'''      <div className="mb-4 overflow-x-auto pb-1">
-        <div className="flex min-w-max gap-2">
+        <div className="flex min-w-max gap-1.5">
           {profileSections.map((section) => {
             const Icon = section.icon;
             const selected = activeProfileSection === section.id;
@@ -452,14 +452,14 @@ tabbed_content = r'''      <div className="mb-4 overflow-x-auto pb-1">
                 type="button"
                 onClick={() => setActiveProfileSection(section.id)}
                 aria-pressed={selected}
-                className={`flex min-h-20 w-28 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center transition-all sm:w-32 ${
+                className={`flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border px-1.5 py-1.5 text-center transition-all sm:h-20 sm:w-32 sm:gap-1.5 sm:px-2 sm:py-2 ${
                   selected
                     ? "border-primary-400 bg-primary-500/15 text-primary-500 shadow-sm dark:text-primary-300"
                     : "border-gray-200 bg-white text-gray-500 hover:border-primary-300 hover:text-primary-500 dark:border-navy-600 dark:bg-navy-800 dark:text-gray-400"
                 }`}
               >
-                <Icon className="h-5 w-5" />
-                <span className="text-[11px] font-heading font-bold leading-tight uppercase tracking-wide">
+                <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="line-clamp-2 text-[9px] font-heading font-bold leading-tight uppercase tracking-wide sm:text-[11px]">
                   {section.label}
                 </span>
               </button>
@@ -596,7 +596,7 @@ hero = hero_path.read_text(encoding="utf-8")
 hero = hero.replace('className="mb-5"', 'className="mb-3"', 1)
 hero = hero.replace(
     'className="bg-linear-to-r from-navy-700 to-navy-800 p-8 rounded-t-xl"',
-    'className="rounded-t-xl bg-linear-to-r from-navy-700 to-navy-800 p-4 sm:p-5"',
+    'className="rounded-t-xl bg-linear-to-r from-navy-700 to-navy-800 p-3 sm:p-5"',
     1,
 )
 hero = hero.replace(
@@ -606,30 +606,30 @@ hero = hero.replace(
 )
 hero = hero.replace(
     'className={`w-24 h-24 rounded-2xl flex items-center justify-center font-heading font-bold text-4xl border-2 overflow-hidden ${',
-    'className={`h-20 w-20 shrink-0 rounded-2xl flex items-center justify-center font-heading font-bold text-2xl sm:h-24 sm:w-24 sm:text-4xl border-2 overflow-hidden ${',
+    'className={`h-16 w-16 shrink-0 rounded-xl flex items-center justify-center font-heading font-bold text-xl sm:h-24 sm:w-24 sm:rounded-2xl sm:text-4xl border-2 overflow-hidden ${',
     1,
 )
 hero = hero.replace(
     'className="text-3xl font-heading font-bold text-white uppercase tracking-wide"',
-    'className="text-xl font-heading font-bold text-white uppercase tracking-wide sm:text-2xl"',
+    'className="text-lg font-heading font-bold text-white uppercase tracking-wide sm:text-2xl"',
     1,
 )
 hero = hero.replace(
     'className="flex items-center gap-3 mt-2"',
-    'className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1"',
+    'className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5"',
     1,
 )
 hero = hero.replace(
     'className="bg-white dark:bg-navy-800 p-3 text-center"',
-    'className="bg-white p-2 text-center dark:bg-navy-800 sm:p-3"',
+    'className="bg-white p-1.5 text-center dark:bg-navy-800 sm:p-3"',
 )
 hero = hero.replace(
     'className="text-xs text-gray-400 dark:text-gray-500 font-heading uppercase tracking-wider"',
-    'className="text-[9px] text-gray-400 dark:text-gray-500 font-heading uppercase tracking-wider sm:text-xs"',
+    'className="text-[8px] text-gray-400 dark:text-gray-500 font-heading uppercase tracking-wider sm:text-xs"',
 )
 hero = hero.replace(
     'className={`font-heading font-bold text-lg mt-0.5 ${color}`}',
-    'className={`mt-0.5 font-heading text-sm font-bold sm:text-lg ${color}`}',
+    'className={`mt-0.5 font-heading text-xs font-bold sm:text-lg ${color}`}',
 )
 hero_path.write_text(hero, encoding="utf-8")
 
@@ -669,12 +669,12 @@ stat_card_path = root / "src" / "components" / "playerProfile" / "PlayerProfileS
 stat_card = stat_card_path.read_text(encoding="utf-8")
 stat_card = stat_card.replace(
     'dark:bg-navy-800/40 p-4">',
-    'dark:bg-navy-800/40 p-2 sm:p-3">',
+    'dark:bg-navy-800/40 p-1.5 sm:p-3">',
     1,
 )
 stat_card = stat_card.replace(
     'className="flex items-baseline justify-between mb-3 pb-2 border-b',
-    'className="mb-2 flex items-baseline justify-between border-b pb-1.5',
+    'className="mb-1.5 flex items-baseline justify-between border-b pb-1',
     1,
 )
 stat_card_path.write_text(stat_card, encoding="utf-8")
