@@ -1006,3 +1006,171 @@ squad = squad.replace('text-sm text-gray-500 dark:text-gray-400 tabular-nums', '
 squad = squad.replace('className="py-1 px-2 w-28"', 'className="py-1 px-2 w-20"')
 
 squad_path.write_text(squad, encoding="utf-8")
+
+
+# Taticas mobile CM: compacta cabecalho, campo antes da lista e remove filtros visuais.
+# Mantem toda a logica/engine existente; os ajustes abaixo sao apenas de apresentacao mobile.
+
+# Botao MENU: fica alinhado ao bloco da data, ao lado de "dezembro", sem cobrir o titulo.
+dashboard_path = root / "src" / "pages" / "Dashboard.tsx"
+dashboard = dashboard_path.read_text(encoding="utf-8")
+dashboard = dashboard.replace(
+    'className="fixed left-3 top-3 z-30 flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"',
+    'className="fixed left-3 top-16 z-30 flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"',
+    1,
+)
+dashboard_path.write_text(dashboard, encoding="utf-8")
+
+# Da mais respiro lateral ao titulo/data para o MENU nao ficar por cima do texto.
+header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
+header = header_path.read_text(encoding="utf-8")
+header = header.replace(
+    'className="flex min-w-0 items-center gap-2 pl-11 sm:gap-3 sm:pl-12"',
+    'className="flex min-w-0 items-center gap-2 pl-16 sm:gap-3 sm:pl-12"',
+    1,
+)
+header_path.write_text(header, encoding="utf-8")
+
+# Card superior de taticas: mantem a tatica ativa e as acoes, mas remove excesso visual.
+command_path = root / "src" / "components" / "tactics" / "TacticsCommandBar.tsx"
+command = command_path.read_text(encoding="utf-8")
+command = command.replace('className="p-4 sm:p-5"', 'className="p-3 sm:p-4"', 1)
+command = command.replace(
+    'className="flex flex-col gap-4"',
+    'className="flex flex-col gap-2"',
+    1,
+)
+command = command.replace(
+    'className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between"',
+    'className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"',
+    1,
+)
+sync_badge = '''                <Badge variant={isDirty ? "accent" : "neutral"} size="sm">
+                  {isDirty ? t("tactics.unsavedChanges") : t("tactics.synced")}
+                </Badge>
+'''
+command = command.replace(sync_badge, "", 1)
+description = '''              <p className="mt-2 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+                {activeTactic.description}
+              </p>
+'''
+compact_summary = '''              <p className="mt-1 truncate text-base font-heading font-bold text-gray-900 dark:text-gray-100">
+                {activeTactic.name}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                {formation} · {t(`common.playStyles.${activePlayStyle}`, activePlayStyle)}
+              </p>
+'''
+command = command.replace(description, compact_summary, 1)
+command = command.replace(
+    'className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)_minmax(0,1.2fr)]"',
+    'className="hidden grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)_minmax(0,1.2fr)]"',
+    1,
+)
+command = command.replace(
+    'className="flex flex-wrap gap-2 xl:justify-end"',
+    'className="flex flex-wrap gap-1.5 sm:justify-end"',
+    1,
+)
+command_path.write_text(command, encoding="utf-8")
+
+# Taticas: no mobile o campo aparece antes de Titulares/Banco.
+tactics_path = root / "src" / "components" / "tactics" / "TacticsTab.tsx"
+tactics = tactics_path.read_text(encoding="utf-8")
+tactics = tactics.replace(
+    'className="flex w-full flex-col gap-5"',
+    'className="flex w-full flex-col gap-3"',
+    1,
+)
+tactics = tactics.replace(
+    'className="grid grid-cols-1 gap-5 xl:grid-cols-[260px_1fr_270px] xl:items-start"',
+    'className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_260px_270px] xl:items-start"',
+    1,
+)
+left_marker = '        {/* Left: player list */}'
+center_marker = '        {/* Center: pitch */}'
+right_marker = '        {/* Right: roles + phase blueprint */}'
+left_start = tactics.find(left_marker)
+center_start = tactics.find(center_marker, left_start + 1) if left_start >= 0 else -1
+right_start = tactics.find(right_marker, center_start + 1) if center_start >= 0 else -1
+if left_start >= 0 and center_start >= 0 and right_start >= 0:
+    left_section = tactics[left_start:center_start]
+    pitch_section = tactics[center_start:right_start]
+    tactics = tactics[:left_start] + pitch_section + left_section + tactics[right_start:]
+tactics_path.write_text(tactics, encoding="utf-8")
+
+# Lista de jogadores na tatica: tira o card de filtro e deixa as linhas bem mais finas.
+player_list_path = root / "src" / "components" / "tactics" / "TacticsPlayerList.tsx"
+player_list = player_list_path.read_text(encoding="utf-8")
+filters_block = '''      <TacticsFilters
+        onClear={onClearFilters}
+        onPlayerSearchChange={onPlayerSearchChange}
+        onPositionFilterChange={onPositionFilterChange}
+        playerSearch={playerSearch}
+        positionFilter={positionFilter}
+      />
+'''
+player_list = player_list.replace(
+    filters_block,
+    '      <div className="hidden">\n' + filters_block + '      </div>\n',
+    1,
+)
+player_list = player_list.replace(
+    'const rowClassName = `flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${',
+    'const rowClassName = `flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-left transition-colors ${',
+    1,
+)
+player_list = player_list.replace(
+    'className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-gray-100"',
+    'className="min-w-0 flex-1 truncate text-xs font-medium text-gray-900 dark:text-gray-100"',
+)
+player_list = player_list.replace(
+    'className="flex flex-col gap-3"',
+    'className="flex flex-col gap-2"',
+    1,
+)
+player_list = player_list.replace(
+    'className="border-b border-gray-100 px-3 py-2 dark:border-navy-700"',
+    'className="border-b border-gray-100 px-2 py-1 dark:border-navy-700"',
+)
+player_list = player_list.replace(
+    'className="p-1.5 space-y-0.5"',
+    'className="space-y-0 p-1"',
+)
+player_list = player_list.replace(
+    'className=`${rowClassName} flex-wrap gap-y-1`',
+    'className=`${rowClassName} flex-wrap gap-y-0.5`',
+    1,
+)
+player_list_path.write_text(player_list, encoding="utf-8")
+
+# Campo: usa o campo real do jogo/engine; apenas reduz cabecalho, margens e altura no mobile.
+pitch_path = root / "src" / "components" / "tactics" / "TacticsPitch.tsx"
+pitch = pitch_path.read_text(encoding="utf-8")
+pitch = pitch.replace(
+    'className="flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-gray-100 bg-linear-to-r from-navy-700 to-navy-800 px-5 py-4 dark:border-navy-600"',
+    'className="hidden"',
+    1,
+)
+pitch = pitch.replace(
+    'className="p-5 sm:p-6 lg:p-7"',
+    'className="p-2 sm:p-3 lg:p-4"',
+    1,
+)
+pitch_parent = 'className="relative mx-auto w-full max-w-[36rem] overflow-hidden rounded-[1.5rem] border border-primary-500/20 bg-linear-to-b from-primary-500 to-primary-700 shadow-inner"'
+pitch_parent_repl = 'className="relative mx-auto w-full max-w-[36rem] overflow-hidden rounded-xl border border-primary-500/20 bg-linear-to-b from-primary-500 to-primary-700 shadow-inner"'
+pitch = pitch.replace(pitch_parent, pitch_parent_repl, 1)
+pitch = pitch.replace(
+    '          <div className="aspect-[8/10] min-h-[35rem] w-full">',
+    '''          <span className="absolute right-2 top-2 z-30 rounded-lg bg-navy-900/85 px-2 py-1 text-xs font-heading font-bold text-white shadow">
+            {formation}
+          </span>
+          <div className="aspect-[8/10] min-h-[26rem] w-full sm:min-h-[32rem]">''',
+    1,
+)
+pitch = pitch.replace('flex w-[6rem]', 'flex w-[4.75rem]', 1)
+pitch = pitch.replace('h-[4.5rem] w-[4.5rem]', 'h-[3.75rem] w-[3.75rem]')
+pitch = pitch.replace('flex w-[4.5rem]', 'flex w-[3.75rem]')
+pitch_path.write_text(pitch, encoding="utf-8")
+
+print("CM mobile: ajustes de Taticas e MENU aplicados")
