@@ -380,6 +380,314 @@ attrs = re.sub(
 )
 attrs_path.write_text(attrs, encoding="utf-8")
 
+# Perfil do jogador CM: topo compacto + navegação por cards/abas.
+# Mantém todas as funções existentes, mas exibe somente uma seção por vez
+# para evitar uma página longa no celular. Atributos é a seção inicial.
+profile_path = root / "src" / "components" / "playerProfile" / "PlayerProfile.tsx"
+profile = profile_path.read_text(encoding="utf-8")
+profile = profile.replace(
+    'import { ArrowLeft } from "lucide-react";',
+    'import { ArrowLeft, BarChart3, Briefcase, CalendarDays, Clock3, History, ListChecks, SlidersHorizontal } from "lucide-react";',
+    1,
+)
+profile = profile.replace(
+    'import { useTranslation } from "react-i18next";',
+    'import { useState } from "react";\nimport { useTranslation } from "react-i18next";',
+    1,
+)
+profile = profile.replace(
+    'import { Select } from "../ui";',
+    'import { Card, CardBody, CardHeader, Select } from "../ui";',
+    1,
+)
+profile = profile.replace(
+    '  const { t, i18n } = useTranslation();\n',
+    '''  const { t, i18n } = useTranslation();
+  const [activeProfileSection, setActiveProfileSection] = useState<
+    | "attributes"
+    | "contract"
+    | "role"
+    | "career"
+    | "advanced"
+    | "season"
+    | "movement"
+    | "recent"
+  >("attributes");
+''',
+    1,
+)
+
+return_marker = '  return (\n    <div>\n'
+sections_code = '''  const profileSections = [
+    { id: "attributes", label: t("playerProfile.attributes"), icon: BarChart3 },
+    { id: "contract", label: t("playerProfile.contractInfo"), icon: Briefcase },
+    { id: "role", label: t("playerProfile.roleAndDuty"), icon: SlidersHorizontal },
+    { id: "career", label: t("playerProfile.careerHistory"), icon: History },
+    { id: "advanced", label: t("playerProfile.advancedStats"), icon: BarChart3 },
+    { id: "season", label: t("playerProfile.seasonHistory"), icon: CalendarDays },
+    { id: "movement", label: t("playerProfile.movementHistory"), icon: ListChecks },
+    { id: "recent", label: t("playerProfile.recentMatches"), icon: Clock3 },
+  ] as const;
+
+  return (
+    <div>
+'''
+if return_marker not in profile:
+    raise RuntimeError("PlayerProfile return marker not found")
+profile = profile.replace(return_marker, sections_code, 1)
+
+section_start = profile.find('      {isOwnClub && onGameUpdate && (')
+section_end = profile.find('      {bidTarget && (', section_start)
+if section_start < 0 or section_end < 0:
+    raise RuntimeError("PlayerProfile content markers not found")
+
+tabbed_content = r'''      <div className="mb-4 overflow-x-auto pb-1">
+        <div className="flex min-w-max gap-2">
+          {profileSections.map((section) => {
+            const Icon = section.icon;
+            const selected = activeProfileSection === section.id;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setActiveProfileSection(section.id)}
+                aria-pressed={selected}
+                className={`flex min-h-20 w-28 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center transition-all sm:w-32 ${
+                  selected
+                    ? "border-primary-400 bg-primary-500/15 text-primary-500 shadow-sm dark:text-primary-300"
+                    : "border-gray-200 bg-white text-gray-500 hover:border-primary-300 hover:text-primary-500 dark:border-navy-600 dark:bg-navy-800 dark:text-gray-400"
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-[11px] font-heading font-bold leading-tight uppercase tracking-wide">
+                  {section.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {contractActionError ? (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+          {contractActionError}
+        </div>
+      ) : null}
+
+      {activeProfileSection === "attributes" ? (
+        <PlayerProfileAttributesCard
+          attrGroups={attrGroups}
+          player={player}
+          isOwnClub={isManagerSquadProfile}
+          isGk={isGoalkeeper(player)}
+          title={t("playerProfile.attributes")}
+          averageLabel={t("common.average")}
+          hiddenTitle={t("playerProfile.attributesHidden")}
+          hiddenBody={t("playerProfile.scoutToView")}
+          listLabel={t("common.listView")}
+          radarLabel={t("common.radarView")}
+        />
+      ) : null}
+
+      {activeProfileSection === "contract" ? (
+        <PlayerProfileContractCard
+          dateOfBirth={player.date_of_birth}
+          contractEnd={player.contract_end}
+          currentDate={gameState.clock.current_date}
+          condition={player.condition}
+          morale={player.morale}
+          marketValue={player.market_value}
+          wage={player.wage}
+          wageSuffix={weeklySuffix}
+          language={i18n.language}
+          contractRiskLevel={contractRiskLevel}
+          contractRiskLabel={contractRiskLabel}
+          isOwnClub={isManagerOwnedProfile}
+          isFreeAgent={isFreeAgent}
+          hasLetExpireIntent={hasLetExpireIntent}
+          actionSubmitting={contractActionSubmitting}
+          onOpenRenewal={openRenewalModal}
+          onMarkLetExpire={() => void handleMarkLetExpire()}
+          onClearLetExpire={() => void handleClearLetExpire()}
+          onOpenTermination={() => void openTerminationModal()}
+          onOpenFreeAgentContract={() => openFreeAgentContract(player)}
+          t={t}
+        />
+      ) : null}
+
+      {activeProfileSection === "role" ? (
+        <Card>
+          <CardHeader>{t("playerProfile.roleAndDuty")}</CardHeader>
+          <CardBody>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-navy-600 dark:bg-navy-700/40">
+                <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                  {t("tactics.playerRoleLabel")}
+                </p>
+                <p className="mt-1 font-heading font-bold text-gray-800 dark:text-gray-100">
+                  {t(`tactics.playerRoles.${currentTacticalRole}`, currentTacticalRole)}
+                </p>
+              </div>
+
+              {isOwnClub && onGameUpdate ? (
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-navy-600 dark:bg-navy-700/40">
+                  <p className="mb-2 text-[10px] font-heading font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                    {t("playerProfile.changeRole")}
+                  </p>
+                  <Select
+                    selectSize="sm"
+                    value={currentTacticalRole}
+                    onChange={(e) => {
+                      void handleTacticalRoleChange(e.target.value as PlayerRole);
+                    }}
+                    aria-label={t("tactics.playerRoleLabel")}
+                  >
+                    {tacticalRoleOptions.map((role) => (
+                      <option key={role} value={role}>
+                        {t(`tactics.playerRoles.${role}`, role)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {activeProfileSection === "career" ? (
+        <PlayerProfileCareerHistoryCard career={player.career} t={t} />
+      ) : null}
+
+      {activeProfileSection === "advanced" ? (
+        <PlayerProfileAdvancedStatsCard summary={advancedStats} t={t} />
+      ) : null}
+
+      {activeProfileSection === "season" ? (
+        <PlayerProfileSeasonStatsCard stats={player.stats} t={t} />
+      ) : null}
+
+      {activeProfileSection === "movement" ? (
+        <PlayerProfileMovementHistoryCard movementHistory={player.movement_history ?? []} t={t} />
+      ) : null}
+
+      {activeProfileSection === "recent" ? (
+        recentMatches.length > 0 ? (
+          <PlayerProfileRecentMatchesCard matches={recentMatches} t={t} />
+        ) : (
+          <Card>
+            <CardHeader>{t("playerProfile.recentMatches")}</CardHeader>
+            <CardBody>
+              <p className="py-5 text-center text-sm text-gray-400 dark:text-gray-500">
+                {t("playerProfile.noRecentMatches")}
+              </p>
+            </CardBody>
+          </Card>
+        )
+      ) : null}
+
+'''
+profile = profile[:section_start] + tabbed_content + profile[section_end:]
+profile_path.write_text(profile, encoding="utf-8")
+
+# Hero do jogador mais compacto, preservando os mesmos dados/ações.
+hero_path = root / "src" / "components" / "playerProfile" / "PlayerProfileHeroCard.tsx"
+hero = hero_path.read_text(encoding="utf-8")
+hero = hero.replace('className="mb-5"', 'className="mb-3"', 1)
+hero = hero.replace(
+    'className="bg-linear-to-r from-navy-700 to-navy-800 p-8 rounded-t-xl"',
+    'className="rounded-t-xl bg-linear-to-r from-navy-700 to-navy-800 p-4 sm:p-5"',
+    1,
+)
+hero = hero.replace(
+    'className="flex items-start gap-6"',
+    'className="flex items-start gap-3 sm:gap-4"',
+    1,
+)
+hero = hero.replace(
+    'className={`w-24 h-24 rounded-2xl flex items-center justify-center font-heading font-bold text-4xl border-2 overflow-hidden ${',
+    'className={`h-20 w-20 shrink-0 rounded-2xl flex items-center justify-center font-heading font-bold text-2xl sm:h-24 sm:w-24 sm:text-4xl border-2 overflow-hidden ${',
+    1,
+)
+hero = hero.replace(
+    'className="text-3xl font-heading font-bold text-white uppercase tracking-wide"',
+    'className="text-xl font-heading font-bold text-white uppercase tracking-wide sm:text-2xl"',
+    1,
+)
+hero = hero.replace(
+    'className="flex items-center gap-3 mt-2"',
+    'className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1"',
+    1,
+)
+hero = hero.replace(
+    'className="bg-white dark:bg-navy-800 p-3 text-center"',
+    'className="bg-white p-2 text-center dark:bg-navy-800 sm:p-3"',
+)
+hero = hero.replace(
+    'className="text-xs text-gray-400 dark:text-gray-500 font-heading uppercase tracking-wider"',
+    'className="text-[9px] text-gray-400 dark:text-gray-500 font-heading uppercase tracking-wider sm:text-xs"',
+)
+hero = hero.replace(
+    'className={`font-heading font-bold text-lg mt-0.5 ${color}`}',
+    'className={`mt-0.5 font-heading text-sm font-bold sm:text-lg ${color}`}',
+)
+hero_path.write_text(hero, encoding="utf-8")
+
+# Atributos no padrão do esboço: três colunas para jogadores de linha,
+# duas colunas para goleiros (que possuem um quarto grupo).
+attrs = attrs_path.read_text(encoding="utf-8")
+attrs = attrs.replace(
+    'className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:auto-rows-fr"',
+    'className={`grid gap-2 sm:gap-3 ${isGk ? "grid-cols-2" : "grid-cols-3"}`}',
+)
+attrs = attrs.replace(
+    'className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2.5"',
+    'className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-1.5"',
+)
+attrs = attrs.replace(
+    'className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap"',
+    'className="min-w-0 text-[10px] leading-tight text-gray-600 dark:text-gray-400 sm:text-xs"',
+)
+attrs = attrs.replace(
+    'className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"',
+    'className="min-w-0 text-[10px] leading-tight text-gray-400 dark:text-gray-500 sm:text-xs"',
+)
+attrs_path.write_text(attrs, encoding="utf-8")
+
+# Ordem visual aprovada: Técnicos, Mentais, Físicos (e Goleiro, quando aplicável).
+attribute_meta_path = root / "src" / "components" / "playerProfile" / "PlayerProfile.attributes.ts"
+attribute_meta = attribute_meta_path.read_text(encoding="utf-8")
+attribute_meta = attribute_meta.replace(
+    'const GROUP_ORDER: readonly AttributeGroupKey[] = ["physical", "technical", "mental", "goalkeeper"];',
+    'const GROUP_ORDER: readonly AttributeGroupKey[] = ["technical", "mental", "physical", "goalkeeper"];',
+    1,
+)
+attribute_meta_path.write_text(attribute_meta, encoding="utf-8")
+
+# Cards estatísticos mais compactos no mobile.
+stat_card_path = root / "src" / "components" / "playerProfile" / "PlayerProfileStatCard.tsx"
+stat_card = stat_card_path.read_text(encoding="utf-8")
+stat_card = stat_card.replace(
+    'dark:bg-navy-800/40 p-4">',
+    'dark:bg-navy-800/40 p-2 sm:p-3">',
+    1,
+)
+stat_card = stat_card.replace(
+    'className="flex items-baseline justify-between mb-3 pb-2 border-b',
+    'className="mb-2 flex items-baseline justify-between border-b pb-1.5',
+    1,
+)
+stat_card_path.write_text(stat_card, encoding="utf-8")
+
+# Rótulos pt-BR específicos das novas abas.
+ptbr_path = root / "src" / "i18n" / "locales" / "pt-BR.json"
+ptbr = json.loads(ptbr_path.read_text(encoding="utf-8"))
+player_profile_labels = ptbr.setdefault("playerProfile", {})
+player_profile_labels["roleAndDuty"] = "Função e papel"
+player_profile_labels["changeRole"] = "Alterar função"
+player_profile_labels["seasonHistory"] = "Histórico da temporada"
+ptbr_path.write_text(json.dumps(ptbr, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
 scout_path = root / "src" / "components" / "ScoutPlayerCard.tsx"
 scout = scout_path.read_text(encoding="utf-8")
 scout = scout.replace(
