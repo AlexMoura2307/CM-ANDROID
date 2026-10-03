@@ -722,6 +722,89 @@ scout = scout.replace(
 )
 scout_path.write_text(scout, encoding="utf-8")
 
+
+# Primeiros Passos: pode ser dispensado depois de lido e não volta nessa carreira.
+home_path = root / "src" / "components" / "home" / "HomeTab.tsx"
+home = home_path.read_text(encoding="utf-8")
+if 'cm-onboarding-dismissed' not in home:
+    home = 'import { useEffect, useState } from "react";\n' + home
+    home = home.replace(
+        '  const { t, i18n } = useTranslation();\n',
+        '''  const { t, i18n } = useTranslation();
+  const onboardingDismissKey =
+    `cm-onboarding-dismissed:${gameState.manager.id}:${gameState.clock.start_date}`;
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
+    typeof window !== "undefined" &&
+    window.localStorage.getItem(onboardingDismissKey) === "1",
+  );
+
+  useEffect(() => {
+    setOnboardingDismissed(
+      typeof window !== "undefined" &&
+        window.localStorage.getItem(onboardingDismissKey) === "1",
+    );
+  }, [onboardingDismissKey]);
+
+  const dismissOnboarding = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(onboardingDismissKey, "1");
+    }
+    setOnboardingDismissed(true);
+  };
+''',
+        1,
+    )
+    home = home.replace(
+        '{myTeam && onboardingState.showOnboarding && completedSteps < onboardingSteps.length && (',
+        '{myTeam && !onboardingDismissed && onboardingState.showOnboarding && completedSteps < onboardingSteps.length && (',
+        1,
+    )
+    home = home.replace(
+        '          onNavigate={onNavigate}\n        />',
+        '          onNavigate={onNavigate}\n          onDismiss={dismissOnboarding}\n        />',
+        1,
+    )
+home_path.write_text(home, encoding="utf-8")
+
+onboarding_card_path = root / "src" / "components" / "home" / "HomeOnboardingChecklistCard.tsx"
+onboarding_card = onboarding_card_path.read_text(encoding="utf-8")
+if 'onDismiss?: () => void;' not in onboarding_card:
+    onboarding_card = onboarding_card.replace(
+        'import { CheckCircle2, Circle, Lightbulb } from "lucide-react";',
+        'import { CheckCircle2, Circle, Lightbulb, X } from "lucide-react";',
+        1,
+    )
+    onboarding_card = onboarding_card.replace(
+        '  onNavigate?: (tab: string) => void;\n}',
+        '  onNavigate?: (tab: string) => void;\n  onDismiss?: () => void;\n}',
+        1,
+    )
+    onboarding_card = onboarding_card.replace(
+        '  onNavigate,\n}: HomeOnboardingChecklistCardProps) {',
+        '  onNavigate,\n  onDismiss,\n}: HomeOnboardingChecklistCardProps) {',
+        1,
+    )
+    onboarding_card = onboarding_card.replace(
+        '      <CardHeader>\n        <div className="flex items-center gap-2">',
+        '''      <CardHeader
+        action={
+          onDismiss ? (
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label={t("common.close")}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-navy-600 dark:hover:text-gray-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          ) : undefined
+        }
+      >
+        <div className="flex items-center gap-2">''',
+        1,
+    )
+onboarding_card_path.write_text(onboarding_card, encoding="utf-8")
+
 # Ajustes gerais de toque/mobile
 css_path = root / "src" / "App.css"
 css = css_path.read_text(encoding="utf-8")
