@@ -805,6 +805,97 @@ if 'onDismiss?: () => void;' not in onboarding_card:
     )
 onboarding_card_path.write_text(onboarding_card, encoding="utf-8")
 
+
+# Tela inicial CM: identidade do clube + Próxima Partida + Caixa de Entrada + Próximos Jogos.
+cm_home_path = root / "src" / "components" / "home" / "CMHomeDashboard.tsx"
+cm_home_path.write_text("import { CalendarDays, ChevronRight, House, Mail, Plane } from \"lucide-react\";\nimport { useTranslation } from \"react-i18next\";\n\nimport {\n  formatDateShort,\n  getFixtureCompetitionName,\n  getTeamName,\n} from \"../../lib/helpers\";\nimport type { FixtureData, GameStateData, MessageData } from \"../../store/gameStore\";\nimport { isMessageVisible } from \"../../utils/newsVisibility\";\nimport { Card, TeamLogo } from \"../ui\";\n\ninterface CMHomeDashboardProps {\n  gameState: GameStateData;\n  messages: MessageData[];\n  lang: string;\n  onNavigate?: (tab: string, context?: { messageId?: string }) => void;\n}\n\ntype UpcomingEntry = {\n  fixture: FixtureData;\n  competitionName: string;\n};\n\nfunction formatFixtureDay(date: string, lang: string): string {\n  const parsed = new Date(`${date}T12:00:00`);\n  if (Number.isNaN(parsed.getTime())) return date;\n  return new Intl.DateTimeFormat(lang || \"pt-BR\", {\n    day: \"2-digit\",\n    month: \"2-digit\",\n    weekday: \"short\",\n  }).format(parsed);\n}\n\nexport default function CMHomeDashboard({\n  gameState,\n  messages,\n  lang,\n  onNavigate,\n}: CMHomeDashboardProps) {\n  const { t } = useTranslation();\n  const teamId = gameState.manager.team_id;\n  const team = teamId ? gameState.teams.find((item) => item.id === teamId) ?? null : null;\n\n  const byId = new Map<string, UpcomingEntry>();\n  if (teamId) {\n    for (const competition of gameState.competitions ?? []) {\n      for (const fixture of competition.fixtures ?? []) {\n        if (\n          fixture.status !== \"Scheduled\" ||\n          (fixture.home_team_id !== teamId && fixture.away_team_id !== teamId)\n        ) {\n          continue;\n        }\n        if (!byId.has(fixture.id)) {\n          byId.set(fixture.id, {\n            fixture,\n            competitionName: getFixtureCompetitionName(gameState, fixture, t),\n          });\n        }\n      }\n    }\n  }\n\n  const upcoming = Array.from(byId.values())\n    .sort((left, right) =>\n      left.fixture.date.localeCompare(right.fixture.date) ||\n      left.fixture.matchday - right.fixture.matchday,\n    )\n    .slice(0, 3);\n\n  const nextEntry = upcoming[0] ?? null;\n  const nextFixture = nextEntry?.fixture ?? null;\n  const homeTeam = nextFixture\n    ? gameState.teams.find((item) => item.id === nextFixture.home_team_id) ?? null\n    : null;\n  const awayTeam = nextFixture\n    ? gameState.teams.find((item) => item.id === nextFixture.away_team_id) ?? null\n    : null;\n\n  const visibleMessages = messages\n    .filter((message) => isMessageVisible(message.date, gameState.clock.current_date))\n    .slice(0, 3);\n  const unreadCount = gameState.messages.filter(\n    (message) => !message.read && isMessageVisible(message.date, gameState.clock.current_date),\n  ).length;\n\n  return (\n    <div className=\"cm-home flex flex-col gap-3 pb-4\">\n      {team ? (\n        <button\n          type=\"button\"\n          onClick={() => onNavigate?.(\"Squad\")}\n          className=\"relative overflow-hidden rounded-2xl border border-white/10 px-4 py-3 text-left shadow-sm\"\n          style={{\n            background: `linear-gradient(125deg, ${team.colors.primary} 0%, ${team.colors.secondary} 100%)`,\n          }}\n        >\n          <div className=\"relative z-10 flex items-center gap-3\">\n            <TeamLogo\n              team={team}\n              className=\"flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/10\"\n              imageClassName=\"h-12 w-12 object-contain drop-shadow\"\n            />\n            <div className=\"min-w-0\">\n              <p className=\"truncate font-heading text-lg font-bold uppercase tracking-wide text-white\">\n                {team.name}\n              </p>\n              <p className=\"mt-0.5 text-xs font-medium uppercase tracking-wider text-white/75\">\n                {team.country}\n              </p>\n            </div>\n            <ChevronRight className=\"ml-auto h-5 w-5 shrink-0 text-white/70\" />\n          </div>\n          <div className=\"absolute inset-y-0 right-0 w-2/5 -skew-x-12 bg-black/15\" />\n        </button>\n      ) : null}\n\n      <Card className=\"overflow-hidden\">\n        <button\n          type=\"button\"\n          onClick={() => onNavigate?.(\"Schedule\")}\n          className=\"flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left dark:border-navy-600\"\n        >\n          <span className=\"flex h-9 w-9 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400\">\n            <CalendarDays className=\"h-5 w-5\" />\n          </span>\n          <span className=\"font-heading text-base font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100\">\n            Próxima Partida\n          </span>\n          <span className=\"ml-auto max-w-[42%] truncate text-xs text-gray-400\">\n            {nextEntry?.competitionName ?? \"\"}\n          </span>\n          <ChevronRight className=\"h-4 w-4 text-gray-400\" />\n        </button>\n\n        {nextFixture && homeTeam && awayTeam ? (\n          <div className=\"grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-4\">\n            <div className=\"min-w-0 text-center\">\n              <TeamLogo\n                team={homeTeam}\n                className=\"mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-white/5\"\n                imageClassName=\"h-12 w-12 object-contain drop-shadow\"\n              />\n              <p className=\"mt-1 truncate font-heading text-xs font-bold uppercase text-gray-800 dark:text-gray-100\">\n                {homeTeam.short_name || homeTeam.name}\n              </p>\n            </div>\n\n            <div className=\"px-1 text-center\">\n              <p className=\"text-[10px] font-semibold uppercase tracking-wider text-gray-400\">\n                {formatFixtureDay(nextFixture.date, lang)}\n              </p>\n              <p className=\"mt-1 font-heading text-xl font-black text-gray-800 dark:text-white\">VS</p>\n              <p className=\"mt-1 text-[10px] text-gray-400\">\n                {homeTeam.stadium_name || t(\"common.unknown\")}\n              </p>\n            </div>\n\n            <div className=\"min-w-0 text-center\">\n              <TeamLogo\n                team={awayTeam}\n                className=\"mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-white/5\"\n                imageClassName=\"h-12 w-12 object-contain drop-shadow\"\n              />\n              <p className=\"mt-1 truncate font-heading text-xs font-bold uppercase text-gray-800 dark:text-gray-100\">\n                {awayTeam.short_name || awayTeam.name}\n              </p>\n            </div>\n          </div>\n        ) : (\n          <p className=\"px-4 py-6 text-center text-sm text-gray-400\">\n            {t(\"home.noUpcomingOpponent\")}\n          </p>\n        )}\n      </Card>\n\n      <Card className=\"overflow-hidden\">\n        <button\n          type=\"button\"\n          onClick={() => onNavigate?.(\"Inbox\")}\n          className=\"flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left dark:border-navy-600\"\n        >\n          <span className=\"flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400\">\n            <Mail className=\"h-5 w-5\" />\n          </span>\n          <span className=\"font-heading text-base font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100\">\n            Caixa de Entrada\n          </span>\n          <span className=\"ml-auto text-xs text-gray-400\">\n            {unreadCount > 0 ? `${unreadCount} não lida${unreadCount === 1 ? \"\" : \"s\"}` : \"Sem novas\"}\n          </span>\n          <ChevronRight className=\"h-4 w-4 text-gray-400\" />\n        </button>\n\n        <div className=\"divide-y divide-gray-100 dark:divide-navy-600\">\n          {visibleMessages.length > 0 ? (\n            visibleMessages.map((message) => (\n              <button\n                type=\"button\"\n                key={message.id}\n                onClick={() => onNavigate?.(\"Inbox\", { messageId: message.id })}\n                className=\"flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-navy-600/40\"\n              >\n                <span\n                  className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${message.read ? \"bg-gray-300 dark:bg-navy-500\" : \"bg-primary-400\"}`}\n                />\n                <span className=\"min-w-0 flex-1\">\n                  <span className=\"block truncate text-sm font-semibold text-gray-800 dark:text-gray-100\">\n                    {message.subject}\n                  </span>\n                  <span className=\"mt-0.5 block truncate text-xs text-gray-400\">\n                    {message.body}\n                  </span>\n                </span>\n                <span className=\"shrink-0 text-[10px] text-gray-400\">\n                  {formatDateShort(message.date, lang)}\n                </span>\n              </button>\n            ))\n          ) : (\n            <p className=\"px-4 py-5 text-center text-sm text-gray-400\">{t(\"home.noMessages\")}</p>\n          )}\n        </div>\n      </Card>\n\n      <Card className=\"overflow-hidden\">\n        <button\n          type=\"button\"\n          onClick={() => onNavigate?.(\"Schedule\")}\n          className=\"flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left dark:border-navy-600\"\n        >\n          <span className=\"flex h-9 w-9 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400\">\n            <CalendarDays className=\"h-5 w-5\" />\n          </span>\n          <span className=\"font-heading text-base font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100\">\n            Próximos Jogos\n          </span>\n          <span className=\"ml-auto text-xs text-gray-400\">Todos os jogos</span>\n          <ChevronRight className=\"h-4 w-4 text-gray-400\" />\n        </button>\n\n        <div className=\"divide-y divide-gray-100 dark:divide-navy-600\">\n          {upcoming.length > 0 ? (\n            upcoming.map(({ fixture, competitionName }) => {\n              const isHome = fixture.home_team_id === teamId;\n              const opponentId = isHome ? fixture.away_team_id : fixture.home_team_id;\n              const opponent = gameState.teams.find((item) => item.id === opponentId) ?? null;\n              return (\n                <button\n                  type=\"button\"\n                  key={fixture.id}\n                  onClick={() => onNavigate?.(\"Schedule\")}\n                  className=\"grid w-full grid-cols-[4.2rem_minmax(0,1fr)_1.5rem_minmax(0,1fr)] items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-navy-600/40\"\n                >\n                  <span className=\"text-xs font-bold text-gray-700 dark:text-gray-200\">\n                    {formatFixtureDay(fixture.date, lang)}\n                  </span>\n                  <span className=\"truncate text-xs text-gray-500 dark:text-gray-400\">\n                    {competitionName}\n                  </span>\n                  <span className=\"flex justify-center text-gray-400\">\n                    {isHome ? <House className=\"h-4 w-4\" /> : <Plane className=\"h-4 w-4\" />}\n                  </span>\n                  <span className=\"flex min-w-0 items-center gap-2\">\n                    {opponent ? (\n                      <TeamLogo\n                        team={opponent}\n                        className=\"flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5\"\n                        imageClassName=\"h-6 w-6 object-contain\"\n                      />\n                    ) : null}\n                    <span className=\"truncate text-sm font-semibold text-gray-700 dark:text-gray-200\">\n                      {opponent ? getTeamName(gameState.teams, opponent.id) : t(\"common.unknown\")}\n                    </span>\n                  </span>\n                </button>\n              );\n            })\n          ) : (\n            <p className=\"px-4 py-5 text-center text-sm text-gray-400\">\n              {t(\"home.noUpcomingOpponent\")}\n            </p>\n          )}\n        </div>\n      </Card>\n    </div>\n  );\n}\n", encoding="utf-8")
+
+home_path = root / "src" / "components" / "home" / "HomeTab.tsx"
+home = home_path.read_text(encoding="utf-8")
+if 'import CMHomeDashboard from "./CMHomeDashboard";' not in home:
+    home = home.replace(
+        'import JobOpportunitiesCard from "./JobOpportunitiesCard";',
+        'import JobOpportunitiesCard from "./JobOpportunitiesCard";\nimport CMHomeDashboard from "./CMHomeDashboard";',
+        1,
+    )
+if 'return <CMHomeDashboard' not in home:
+    home = home.replace(
+        '  const hasMomentum = roster.length > 0 && (hotPlayers.length > 0 || coldPlayers.length > 0);\n\n  return (',
+        '''  const hasMomentum = roster.length > 0 && (hotPlayers.length > 0 || coldPlayers.length > 0);
+
+  return <CMHomeDashboard
+    gameState={gameState}
+    messages={recentMessages}
+    lang={lang}
+    onNavigate={onNavigate}
+  />;
+
+  return (''',
+        1,
+    )
+home_path.write_text(home, encoding="utf-8")
+
+# Navegação inferior mobile fixa: Início | Elenco | Tática | Staff.
+dashboard_path = root / "src" / "pages" / "Dashboard.tsx"
+dashboard = dashboard_path.read_text(encoding="utf-8")
+dashboard = dashboard.replace(
+    'import { Cpu, Eye, Gamepad2, Menu } from "lucide-react";',
+    'import { Cpu, Eye, Gamepad2, Menu, House, Users, Crosshair, UserCog } from "lucide-react";',
+    1,
+)
+if 'cm-mobile-bottom-nav' not in dashboard:
+    dashboard = dashboard.replace(
+        '''      </main>
+    </div>
+  );
+}''',
+        '''      </main>
+
+      <nav
+        className="cm-mobile-bottom-nav fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-gray-200 bg-white/95 shadow-2xl backdrop-blur dark:border-navy-600 dark:bg-navy-800/95 lg:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {[
+          { tab: "Home", label: t("dashboard.home"), icon: House },
+          { tab: "Squad", label: t("dashboard.squad"), icon: Users },
+          { tab: "Tactics", label: t("dashboard.tactics"), icon: Crosshair },
+          { tab: "Staff", label: "Staff", icon: UserCog },
+        ].map((item) => {
+          const Icon = item.icon;
+          const active = profileNavigation.activeTab === item.tab;
+          return (
+            <button
+              key={item.tab}
+              type="button"
+              onClick={() => handleNavClick(item.tab)}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 px-1 py-2 font-heading text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                active
+                  ? "border-t-2 border-primary-400 bg-primary-500/10 text-primary-500 dark:text-primary-300"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}''',
+        1,
+    )
+dashboard_path.write_text(dashboard, encoding="utf-8")
+
+workspace_path = root / "src" / "components" / "dashboard" / "DashboardWorkspaceContent.tsx"
+workspace = workspace_path.read_text(encoding="utf-8")
+workspace = workspace.replace(
+    'className="flex-1 overflow-auto bg-gray-100 p-3 dark:bg-navy-900 sm:p-4 lg:p-6"',
+    'className="flex-1 overflow-auto bg-gray-100 p-3 pb-24 dark:bg-navy-900 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"',
+    1,
+)
+workspace_path.write_text(workspace, encoding="utf-8")
+
 # Ajustes gerais de toque/mobile
 css_path = root / "src" / "App.css"
 css = css_path.read_text(encoding="utf-8")
