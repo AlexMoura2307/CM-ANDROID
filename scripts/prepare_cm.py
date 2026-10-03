@@ -659,7 +659,7 @@ attrs = attrs.replace(
 )
 attrs = attrs.replace(
     '<CardBody>',
-    '<CardBody className="!p-2.5 !pb-20 sm:!p-4">',
+    '<CardBody className="!p-2 !pb-8 sm:!p-4">',
     1,
 )
 attrs_path.write_text(attrs, encoding="utf-8")
