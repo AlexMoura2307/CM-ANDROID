@@ -58,6 +58,15 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Generate embedded CM Brasil database
+        shell: bash
+        run: |
+          python3 scripts/generate_brazil_fase1.py
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate cm-brasil-fase1
+          mkdir -p upstream/src-tauri/resources
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack cm-brasil-fase1 --output upstream/src-tauri/resources/cm-brasil-2026-fase1.ofm
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/cm-brasil-2026-fase1.ofm
+
       - name: Install frontend dependencies
         working-directory: upstream
         run: npm ci
