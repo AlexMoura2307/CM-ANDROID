@@ -1,4 +1,4 @@
-name: Sign CM Player Profile APK
+name: Sign CM Mobile Home APK
 
 on:
   push:
@@ -18,14 +18,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download CM player profile build
+      - name: Download CM mobile home build
         uses: actions/download-artifact@v4
         with:
           name: CM-Android-APK
           path: unsigned
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: AlexMoura2307/CM-ANDROID
-          run-id: 37139767875
+          run-id: 37147640736
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -42,7 +42,7 @@ jobs:
             "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
           fi
 
-      - name: Sign CM player profile APK
+      - name: Sign CM mobile home APK
         shell: bash
         run: |
           set -euo pipefail
@@ -59,22 +59,22 @@ jobs:
             -dname "CN=CM Android Test,O=CM,C=BR" \
             -keyalg RSA -keysize 2048 -validity 10000
 
-          "$BT/zipalign" -p -f 4 "$UNSIGNED" CM-Perfil-Jogador-aligned.apk
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" CM-Mobile-Home-aligned.apk
 
           "$BT/apksigner" sign \
             --ks cm-test.keystore \
             --ks-key-alias cmtest \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out CM-Perfil-Jogador-Instalavel.apk \
-            CM-Perfil-Jogador-aligned.apk
+            --out CM-Mobile-Home-Instalavel.apk \
+            CM-Mobile-Home-aligned.apk
 
-          "$BT/apksigner" verify --verbose --print-certs CM-Perfil-Jogador-Instalavel.apk
+          "$BT/apksigner" verify --verbose --print-certs CM-Mobile-Home-Instalavel.apk
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: CM-Perfil-Jogador-Instalavel
-          path: CM-Perfil-Jogador-Instalavel.apk
+          name: CM-Mobile-Home-Instalavel
+          path: CM-Mobile-Home-Instalavel.apk
           if-no-files-found: error
           retention-days: 14
