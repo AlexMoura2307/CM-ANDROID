@@ -638,19 +638,29 @@ hero_path.write_text(hero, encoding="utf-8")
 attrs = attrs_path.read_text(encoding="utf-8")
 attrs = attrs.replace(
     'className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:auto-rows-fr"',
-    'className={`grid gap-2 sm:gap-3 ${isGk ? "grid-cols-2" : "grid-cols-3"}`}',
+    'className={`grid gap-1.5 sm:gap-3 ${isGk ? "grid-cols-2" : "grid-cols-3"}`}',
 )
 attrs = attrs.replace(
     'className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2.5"',
-    'className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-1.5"',
+    'className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1"',
 )
 attrs = attrs.replace(
     'className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap"',
-    'className="min-w-0 text-[10px] leading-tight text-gray-600 dark:text-gray-400 sm:text-xs"',
+    'className="min-w-0 text-[9px] leading-none text-gray-600 dark:text-gray-400 sm:text-xs"',
 )
 attrs = attrs.replace(
     'className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"',
-    'className="min-w-0 text-[10px] leading-tight text-gray-400 dark:text-gray-500 sm:text-xs"',
+    'className="min-w-0 text-[9px] leading-none text-gray-400 dark:text-gray-500 sm:text-xs"',
+)
+attrs = attrs.replace(
+    '<CardHeader',
+    '<CardHeader className="!px-3 !py-2 sm:!px-4 sm:!py-3"',
+    1,
+)
+attrs = attrs.replace(
+    '<CardBody>',
+    '<CardBody className="!p-2.5 !pb-20 sm:!p-4">',
+    1,
 )
 attrs_path.write_text(attrs, encoding="utf-8")
 
