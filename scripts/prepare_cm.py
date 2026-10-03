@@ -1007,6 +1007,10 @@ squad = squad.replace('className="py-1 px-2 w-28"', 'className="py-1 px-2 w-20"'
 # TypeScript continua validando JSX oculto; mantem os mesmos guards com assertions explicitas.
 squad = squad.replace('t(\`tactics.presetNames.\${currentPreset.id}\`, currentPreset.id)', 't(\`tactics.presetNames.\${currentPreset!.id}\`, currentPreset!.id)')
 squad = squad.replace('injury={player.injury} />', 'injury={player.injury!} />')
+squad = squad.replace(
+    't(`tactics.presetNames.${currentPreset.id}`, currentPreset.id)',
+    't(`tactics.presetNames.${currentPreset?.id ?? ""}`, currentPreset?.id ?? "")',
+)
 
 squad_path.write_text(squad, encoding="utf-8")
 
