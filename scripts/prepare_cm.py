@@ -1631,6 +1631,10 @@ override_pairs = [
         Path("overrides/src/lib/playerSquad.ts"),
         root / "src" / "lib" / "playerSquad.ts",
     ),
+    (
+        Path("overrides/src/components/dashboard/dashboardProfileNavigation.ts"),
+        root / "src" / "components" / "dashboard" / "dashboardProfileNavigation.ts",
+    ),
 ]
 for override_src, override_dst in override_pairs:
     if not override_src.exists():
@@ -2165,6 +2169,168 @@ main_menu = main_menu.replace(
 )
 main_menu_path.write_text(main_menu, encoding="utf-8")
 
+
+# Android: o botao Voltar fisico retorna a tela anterior dentro do WFE.
+# O Tauri recebe o back como navegacao do WebView e este historico espelha a pilha interna do Dashboard.
+dashboard_path = root / "src" / "pages" / "Dashboard.tsx"
+dashboard = dashboard_path.read_text(encoding="utf-8")
+
+history_state_anchor = '''  const [profileNavigation, setProfileNavigation] = useState(() =>
+    createDashboardProfileNavigationState("Home"),
+  );
+'''
+history_state_repl = history_state_anchor + '''  const profileNavigationRef = useRef(profileNavigation);
+  profileNavigationRef.current = profileNavigation;
+  const androidBackReadyRef = useRef(false);
+
+  const pushAndroidBackEntry = useCallback(() => {
+    if (!androidBackReadyRef.current || typeof window === "undefined") return;
+    window.history.pushState(
+      { ...(window.history.state ?? {}), wfeDashboardEntry: true },
+      "",
+      window.location.href,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const currentUrl = window.location.href;
+    window.history.replaceState(
+      { ...(window.history.state ?? {}), wfeDashboardBase: true },
+      "",
+      currentUrl,
+    );
+    window.history.pushState(
+      { ...(window.history.state ?? {}), wfeDashboardGuard: true },
+      "",
+      currentUrl,
+    );
+    androidBackReadyRef.current = true;
+
+    const onAndroidBack = () => {
+      const current = profileNavigationRef.current;
+      if (hasDashboardProfileHistory(current)) {
+        setProfileNavigation((state) => goBackDashboardProfile(state));
+        return;
+      }
+
+      // Na Home, Voltar nao fecha o jogo por acidente: abre a confirmacao de saida.
+      setShowExitConfirm(true);
+      window.history.pushState(
+        { ...(window.history.state ?? {}), wfeDashboardGuard: true },
+        "",
+        window.location.href,
+      );
+    };
+
+    window.addEventListener("popstate", onAndroidBack);
+    return () => {
+      androidBackReadyRef.current = false;
+      window.removeEventListener("popstate", onAndroidBack);
+    };
+  }, []);
+'''
+if history_state_anchor not in dashboard:
+    raise RuntimeError("WFE Android Back: estado de navegacao nao encontrado")
+dashboard = dashboard.replace(history_state_anchor, history_state_repl, 1)
+
+old_nav = '''  function handleNavClick(tab: string): void {
+    setProfileNavigation((currentState) => navigateDashboardProfiles(currentState, tab));
+    setIsSidebarOpen(false);
+  }
+
+  function handleNavigate(tab: string, context?: DashboardNavigateContext): void {
+    setProfileNavigation((currentState) => navigateDashboardProfiles(currentState, tab, context));
+  }
+
+  function handleBack(): void {
+    setProfileNavigation((currentState) => goBackDashboardProfile(currentState));
+  }
+'''
+new_nav = '''  function handleNavClick(tab: string): void {
+    setProfileNavigation((currentState) => {
+      const nextState = navigateDashboardProfiles(currentState, tab);
+      if (nextState !== currentState) pushAndroidBackEntry();
+      return nextState;
+    });
+    setIsSidebarOpen(false);
+  }
+
+  function handleNavigate(tab: string, context?: DashboardNavigateContext): void {
+    setProfileNavigation((currentState) => {
+      const nextState = navigateDashboardProfiles(currentState, tab, context);
+      if (nextState !== currentState) pushAndroidBackEntry();
+      return nextState;
+    });
+  }
+
+  function handleBack(): void {
+    if (hasDashboardProfileHistory(profileNavigationRef.current) && androidBackReadyRef.current) {
+      window.history.back();
+      return;
+    }
+    if (hasDashboardProfileHistory(profileNavigationRef.current)) {
+      setProfileNavigation((currentState) => goBackDashboardProfile(currentState));
+      return;
+    }
+    setShowExitConfirm(true);
+  }
+'''
+if old_nav not in dashboard:
+    raise RuntimeError("WFE Android Back: handlers principais nao encontrados")
+dashboard = dashboard.replace(old_nav, new_nav, 1)
+
+dashboard = dashboard.replace(
+    '''  function selectPlayer(id: string, options?: PlayerSelectionOptions): void {
+    setProfileNavigation((currentState) => selectDashboardPlayer(currentState, id, options));
+  }
+
+  function selectTeam(id: string): void {
+    setProfileNavigation((currentState) => selectDashboardTeam(currentState, id));
+  }
+''',
+    '''  function selectPlayer(id: string, options?: PlayerSelectionOptions): void {
+    pushAndroidBackEntry();
+    setProfileNavigation((currentState) => selectDashboardPlayer(currentState, id, options));
+  }
+
+  function selectTeam(id: string): void {
+    pushAndroidBackEntry();
+    setProfileNavigation((currentState) => selectDashboardTeam(currentState, id));
+  }
+''',
+    1,
+)
+dashboard = dashboard.replace(
+    '''  function handleSelectSearchPlayer(playerId: string): void {
+    setProfileNavigation((currentState) => openDashboardSearchPlayer(currentState, playerId));
+    setSearchQuery("");
+  }
+
+  function handleSelectSearchTeam(teamId: string): void {
+    setProfileNavigation((currentState) => openDashboardSearchTeam(currentState, teamId));
+    setSearchQuery("");
+  }
+''',
+    '''  function handleSelectSearchPlayer(playerId: string): void {
+    pushAndroidBackEntry();
+    setProfileNavigation((currentState) => openDashboardSearchPlayer(currentState, playerId));
+    setSearchQuery("");
+  }
+
+  function handleSelectSearchTeam(teamId: string): void {
+    pushAndroidBackEntry();
+    setProfileNavigation((currentState) => openDashboardSearchTeam(currentState, teamId));
+    setSearchQuery("");
+  }
+''',
+    1,
+)
+dashboard_path.write_text(dashboard, encoding="utf-8")
+print("WFE Android: botao Voltar navega pela tela anterior e protege a Home contra saida acidental")
+
+
 print("WFE Plantel 2.0 aplicado: Principal, Reservas, Base, escalacao e recrutamento")
 
 
@@ -2176,6 +2342,11 @@ checks = [
         root / "src" / "pages" / "MainMenu.tsx",
         'src="/wfe-logo.svg"',
         "identidade WFE aplicada",
+    ),
+    (
+        root / "src" / "pages" / "Dashboard.tsx",
+        'wfeDashboardGuard',
+        "botao Voltar Android integrado",
     ),
     (
         root / "src" / "pages" / "Dashboard.tsx",
