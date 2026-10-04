@@ -22,7 +22,7 @@ if "" in lock.get("packages", {}):
     lock["packages"][""]["name"] = "wfe-world-football-empire"
 lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-# Tauri / Android - versão de teste instalada ao lado do CM atual
+# Tauri / Android - identidade WFE instalada como app proprio
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
 conf["productName"] = "World Football Empire"
@@ -128,7 +128,7 @@ if normalize_marker in settings_rs:
     settings_rs = settings_rs.replace(normalize_marker, normalize_repl, 1)
 settings_rs_path.write_text(settings_rs, encoding="utf-8")
 
-# Nome CM em todos os idiomas
+# Nome WFE em todos os idiomas
 locales_dir = root / "src" / "i18n" / "locales"
 for locale_path in locales_dir.glob("*.json"):
     data = json.loads(locale_path.read_text(encoding="utf-8"))
@@ -192,8 +192,8 @@ index_path.write_text(index_src, encoding="utf-8")
 main_ts_path = root / "src" / "main.tsx"
 main_ts = main_ts_path.read_text(encoding="utf-8")
 main_ts = main_ts.replace(
-    'logInfo(\`[startup] Openfoot Manager \${formatAppVersion()} (\${navigator.userAgent})\`);',
-    'logInfo(\`[startup] WFE - World Football Empire \${formatAppVersion()} (\${navigator.userAgent})\`);',
+    'logInfo(`[startup] Openfoot Manager ${formatAppVersion()} (${navigator.userAgent})`);',
+    'logInfo(`[startup] WFE - World Football Empire ${formatAppVersion()} (${navigator.userAgent})`);',
 )
 main_ts_path.write_text(main_ts, encoding="utf-8")
 
@@ -210,12 +210,16 @@ menu = menu.replace(
 )
 menu_path.write_text(menu, encoding="utf-8")
 
-# CM mobile UI: menu lateral vira drawer acionado por hamburger.
+# WFE mobile UI: menu lateral vira drawer acionado por hamburger.
 sidebar_path = root / "src" / "components" / "dashboard" / "DashboardSidebar.tsx"
 sidebar = sidebar_path.read_text(encoding="utf-8")
 sidebar = sidebar.replace(
     'collapsed ? "w-20" : "w-64"',
     'collapsed ? "w-20" : "w-full"',
+)
+sidebar = sidebar.replace(
+    'src="../../openfootball.svg"',
+    'src="/wfe-app-icon.svg"',
 )
 sidebar_path.write_text(sidebar, encoding="utf-8")
 
@@ -955,7 +959,7 @@ if marker not in css:
 """
 css_path.write_text(css, encoding="utf-8")
 
-print("CM Android preparado em", root)
+print("WFE Android preparado em", root)
 
 
 # Elenco mobile compacto: remove filtros/resumo visual e enxuga a tabela.
@@ -1563,6 +1567,6 @@ checks = [
 for path, needle, label in checks:
     generated = path.read_text(encoding="utf-8")
     if needle not in generated:
-        raise RuntimeError(f"CM Teste 3: ajuste ausente no build: {label}")
+        raise RuntimeError(f"WFE: ajuste ausente no build: {label}")
 
 print("WFE validado: ajustes visuais confirmados antes do build")
