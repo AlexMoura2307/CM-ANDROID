@@ -1023,7 +1023,7 @@ dashboard_path = root / "src" / "pages" / "Dashboard.tsx"
 dashboard = dashboard_path.read_text(encoding="utf-8")
 dashboard = dashboard.replace(
     'className="fixed left-3 top-3 z-30 flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"',
-    'className="fixed left-3 top-16 z-30 flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"',
+    'className="fixed left-3 top-12 z-30 flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white shadow-lg ring-1 ring-white/10 active:scale-95"',
     1,
 )
 dashboard_path.write_text(dashboard, encoding="utf-8")
@@ -1183,13 +1183,199 @@ pitch_path.write_text(pitch, encoding="utf-8")
 print("CM mobile: ajustes de Taticas e MENU aplicados")
 
 
+
+# Partida mobile: layout de uma coluna sem cortes
+# Mantem a engine, eventos e comandos intactos; altera somente apresentacao responsiva.
+match_layout_path = root / "src" / "components" / "match" / "MatchScreenLayout.tsx"
+match_layout = match_layout_path.read_text(encoding="utf-8")
+match_layout = match_layout.replace(
+    '"relative mx-auto w-full px-6"',
+    '"relative mx-auto w-full px-2 sm:px-6"',
+    1,
+)
+match_layout = match_layout.replace(
+    '"absolute right-6 top-4"',
+    '"absolute right-2 top-2 sm:right-6 sm:top-4"',
+    1,
+)
+match_layout_path.write_text(match_layout, encoding="utf-8")
+
+match_live_path = root / "src" / "components" / "match" / "MatchLive.tsx"
+match_live = match_live_path.read_text(encoding="utf-8")
+match_live = match_live.replace(
+    'headerContentClassName="max-w-7xl py-3"',
+    'headerContentClassName="max-w-7xl py-2 sm:py-3"',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="flex items-center justify-between gap-4">\n            {/* Live indicator */}',
+    '<div className="flex min-w-0 items-center justify-between gap-1 sm:gap-4">\n            {/* Live indicator */}',
+    1,
+)
+match_live = match_live.replace(
+    '            <div className="flex items-center gap-2">\n              {isRunning && (',
+    '            <div className="hidden items-center gap-2 sm:flex">\n              {isRunning && (',
+    1,
+)
+match_live = match_live.replace(
+    '            <div className="flex items-center gap-6">\n              <div className="flex items-center gap-3">',
+    '            <div className="flex min-w-0 flex-1 items-center justify-center gap-1 sm:flex-none sm:gap-6">\n              <div className="flex min-w-0 items-center gap-1 sm:gap-3">',
+    1,
+)
+match_live = match_live.replace(
+    'className="font-heading font-bold text-sm uppercase tracking-wider text-gray-800 dark:text-gray-200"',
+    'className="max-w-[4.5rem] truncate text-[10px] font-heading font-bold uppercase tracking-wide text-gray-800 dark:text-gray-200 sm:max-w-none sm:text-sm sm:tracking-wider"',
+)
+match_live = match_live.replace(
+    'className="text-xs text-gray-500 dark:text-gray-400"',
+    'className="hidden text-xs text-gray-500 dark:text-gray-400 sm:block"',
+    2,
+)
+match_live = match_live.replace(
+    'className="w-10 h-10 rounded-lg flex items-center justify-center font-heading font-bold text-sm overflow-hidden"',
+    'className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg text-sm font-heading font-bold sm:h-10 sm:w-10"',
+)
+match_live = match_live.replace(
+    'imageClassName="h-8 w-8 object-contain drop-shadow"',
+    'imageClassName="h-6 w-6 object-contain drop-shadow sm:h-8 sm:w-8"',
+)
+match_live = match_live.replace(
+    'className="text-4xl font-heading font-bold text-gray-900 dark:text-white tabular-nums"',
+    'className="text-3xl font-heading font-bold text-gray-900 dark:text-white tabular-nums sm:text-4xl"',
+)
+match_live = match_live.replace(
+    '              <div className="flex items-center gap-3">\n                <TeamLogo\n                  team={awayFullTeam',
+    '              <div className="flex min-w-0 items-center gap-1 sm:gap-3">\n                <TeamLogo\n                  team={awayFullTeam',
+    1,
+)
+match_live = match_live.replace(
+    '            <div className="flex items-center gap-2">\n              <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />',
+    '            <div className="hidden items-center gap-2 sm:flex">\n              <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="flex-1 flex overflow-hidden">',
+    '<div className="flex min-w-0 flex-1 flex-col overflow-x-hidden lg:flex-row">',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="flex-1 flex flex-col">\n          <div className="flex bg-white',
+    '<div className="flex min-w-0 flex-1 flex-col">\n          <div className="flex w-full bg-white',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="flex-1 overflow-auto p-4">',
+    '<div className="flex-1 overflow-auto p-2 sm:p-4">',
+    1,
+)
+match_live = match_live.replace(
+    '<aside className="w-72 bg-white dark:bg-navy-800 border-l border-gray-200 dark:border-navy-700 flex flex-col transition-colors duration-300">',
+    '<aside className="flex w-full shrink-0 flex-col border-t border-gray-200 bg-white transition-colors duration-300 dark:border-navy-700 dark:bg-navy-800 lg:w-72 lg:border-l lg:border-t-0">',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="p-4 border-b border-gray-200 dark:border-navy-700">',
+    '<div className="border-b border-gray-200 p-3 dark:border-navy-700 sm:p-4">',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="p-4 border-b border-gray-200 dark:border-navy-700 flex flex-col gap-2">',
+    '<div className="flex flex-col gap-2 border-b border-gray-200 p-3 dark:border-navy-700 sm:p-4">',
+    1,
+)
+match_live = match_live.replace(
+    '<div className="p-4 flex-1 overflow-auto">',
+    '<div className="flex-1 overflow-auto p-3 sm:p-4">',
+    1,
+)
+match_live_path.write_text(match_live, encoding="utf-8")
+
+# Intervalo/prelecao: no celular deixa de usar 3 colunas estreitas.
+halftime_path = root / "src" / "components" / "match" / "HalfTimeBreak.tsx"
+halftime = halftime_path.read_text(encoding="utf-8")
+halftime = halftime.replace(
+    'border-b border-gray-200 dark:border-navy-700 px-4 py-4 transition-colors duration-300',
+    'border-b border-gray-200 px-2 py-3 transition-colors duration-300 dark:border-navy-700 sm:px-4 sm:py-4',
+    1,
+)
+halftime = halftime.replace(
+    '<div className="relative">\n          <div className="absolute right-0 top-0 flex items-center gap-3">',
+    '<div className="flex flex-col gap-3 sm:relative">\n          <div className="order-2 flex items-center justify-center gap-2 sm:absolute sm:right-0 sm:top-0 sm:gap-3">',
+    1,
+)
+halftime = halftime.replace(
+    'className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r',
+    'className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r sm:px-6 sm:py-2.5',
+    1,
+)
+halftime = halftime.replace(
+    '<div className="flex items-center justify-center gap-8">',
+    '<div className="order-1 flex min-w-0 items-center justify-between gap-1 sm:justify-center sm:gap-8">',
+    1,
+)
+halftime = halftime.replace(
+    '<div className="flex items-center gap-3">\n              <TeamLogo',
+    '<div className="flex min-w-0 items-center gap-1 sm:gap-3">\n              <TeamLogo',
+    1,
+)
+halftime = halftime.replace(
+    '<div className="flex items-center gap-3">\n              <p className="font-heading font-bold text-gray-800 dark:text-gray-200">',
+    '<div className="flex min-w-0 items-center gap-1 sm:gap-3">\n              <p className="max-w-[4.5rem] truncate text-[10px] font-heading font-bold text-gray-800 dark:text-gray-200 sm:max-w-none sm:text-base">',
+    1,
+)
+halftime = halftime.replace(
+    '<p className="font-heading font-bold text-gray-800 dark:text-gray-200">\n                {snapshot.home_team.name}',
+    '<p className="max-w-[4.5rem] truncate text-[10px] font-heading font-bold text-gray-800 dark:text-gray-200 sm:max-w-none sm:text-base">\n                {snapshot.home_team.name}',
+    1,
+)
+halftime = halftime.replace(
+    'className="w-12 h-12 rounded-xl flex items-center justify-center font-heading font-bold overflow-hidden"',
+    'className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl font-heading font-bold sm:h-12 sm:w-12"',
+)
+halftime = halftime.replace(
+    'imageClassName="h-9 w-9 object-contain drop-shadow"',
+    'imageClassName="h-7 w-7 object-contain drop-shadow sm:h-9 sm:w-9"',
+)
+halftime = halftime.replace(
+    'className="text-5xl font-heading font-bold text-gray-900 dark:text-white tabular-nums"',
+    'className="text-3xl font-heading font-bold text-gray-900 dark:text-white tabular-nums sm:text-5xl"',
+)
+halftime = halftime.replace(
+    '<div className="max-w-md mx-auto mt-3">',
+    '<div className="order-3 mx-auto mt-1 w-full max-w-md sm:mt-3">',
+    1,
+)
+halftime = halftime.replace(
+    '<div className="px-6 py-6 grid grid-cols-3 gap-6">',
+    '<div className="grid grid-cols-1 gap-3 px-3 py-3 lg:grid-cols-3 lg:gap-6 lg:px-6 lg:py-6">',
+    1,
+)
+halftime_path.write_text(halftime, encoding="utf-8")
+
+# Escalacoes: empilham no celular e nao estouram a largura.
+match_panels_path = root / "src" / "components" / "match" / "MatchPanels.tsx"
+match_panels = match_panels_path.read_text(encoding="utf-8")
+match_panels = match_panels.replace(
+    '<div className="flex gap-6">',
+    '<div className="flex flex-col gap-4 sm:flex-row sm:gap-6">',
+    1,
+)
+match_panels = match_panels.replace(
+    '<div className="w-px bg-gray-200 dark:bg-navy-700 transition-colors duration-300" />',
+    '<div className="hidden w-px bg-gray-200 transition-colors duration-300 dark:bg-navy-700 sm:block" />',
+    1,
+)
+match_panels_path.write_text(match_panels, encoding="utf-8")
+
+print("CM mobile: partida ao vivo, intervalo, estatisticas e escalacoes responsivas aplicadas")
+
 # Validacao forte do pacote CM Teste 3
 # Garante que o build realmente contem os ajustes solicitados. Se algum replace falhar,
 # a compilacao para aqui em vez de gerar um APK aparentemente "novo" sem as mudancas.
 checks = [
     (
         root / "src" / "pages" / "Dashboard.tsx",
-        'top-16',
+        'top-12',
         "MENU reposicionado",
     ),
     (
@@ -1226,6 +1412,21 @@ checks = [
         root / "src" / "components" / "squad" / "SquadRosterView.tsx",
         'table-auto text-left text-xs',
         "elenco compacto",
+    ),
+    (
+        root / "src" / "components" / "match" / "MatchLive.tsx",
+        'flex min-w-0 flex-1 flex-col overflow-x-hidden lg:flex-row',
+        "partida ao vivo sem corte lateral",
+    ),
+    (
+        root / "src" / "components" / "match" / "HalfTimeBreak.tsx",
+        'grid grid-cols-1 gap-3 px-3 py-3 lg:grid-cols-3',
+        "intervalo e prelecao em coluna no mobile",
+    ),
+    (
+        root / "src" / "components" / "match" / "MatchPanels.tsx",
+        'flex flex-col gap-4 sm:flex-row sm:gap-6',
+        "escalacoes responsivas",
     ),
 ]
 for path, needle, label in checks:
