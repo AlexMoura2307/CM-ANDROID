@@ -1248,8 +1248,8 @@ old_date = '''          <p className="mt-0.5 flex items-center gap-1.5 text-xs t
           </p>
 '''
 new_date = '''          <p className="mt-0.5 flex flex-col items-start text-xs leading-tight text-gray-500 dark:text-gray-400">
-            <span className="font-medium">{currentDate.split("|")[0]}</span>
-            <span className="mt-0.5 font-semibold text-gray-700 dark:text-gray-300">
+            <span className="whitespace-nowrap font-medium">{currentDate.split("|")[0]}</span>
+            <span className="mt-0.5 whitespace-nowrap font-semibold text-gray-700 dark:text-gray-300">
               {currentDate.split("|")[1]}
             </span>
           </p>
@@ -2417,6 +2417,26 @@ checks = [
         root / "src" / "components" / "squad" / "SquadRosterView.tsx",
         'openPositionsPlayerId',
         "posicoes secundarias por toque",
+    ),
+    (
+        root / "src" / "components" / "squad" / "SquadTab.tsx",
+        'id: "Reserve"',
+        "abas Principal Reservas Base",
+    ),
+    (
+        root / "src" / "components" / "squad" / "SquadRosterView.tsx",
+        'Escalar / escolher posição',
+        "escalacao direta pelo plantel",
+    ),
+    (
+        root / "src-tauri" / "crates" / "domain" / "src" / "player.rs",
+        'Reserve,',
+        "reservas persistidos no modelo",
+    ),
+    (
+        root / "src" / "components" / "transfers" / "TransfersTab.tsx",
+        'Recrutamento da Base',
+        "recrutamento da Base em Transferencias",
     ),
     (
         root / "src" / "components" / "tactics" / "TacticsCommandBar.tsx",
