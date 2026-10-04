@@ -100,7 +100,6 @@ jobs:
 
           if "enableImmersiveMode" not in src:
               imports = """import android.os.Build
-          import android.os.Bundle
           import android.view.View
           import android.view.WindowInsets
           import android.view.WindowInsetsController
@@ -110,15 +109,26 @@ jobs:
                   raise SystemExit("Android package declaration not found")
               src = src[: package_line_end + 1] + "\n" + imports + src[package_line_end + 1 :]
 
-              old = "class MainActivity : TauriActivity()"
-              new = """class MainActivity : TauriActivity() {
-            override val handleBackNavigation: Boolean = true
+              class_marker = "class MainActivity : TauriActivity() {"
+              if class_marker not in src:
+                  raise SystemExit("MainActivity class marker not found")
+              src = src.replace(
+                  class_marker,
+                  class_marker + "\n  override val handleBackNavigation: Boolean = true",
+                  1,
+              )
 
-            override fun onCreate(savedInstanceState: Bundle?) {
-              super.onCreate(savedInstanceState)
-              enableImmersiveMode()
-            }
+              on_create_marker = "    super.onCreate(savedInstanceState)\n"
+              if on_create_marker not in src:
+                  raise SystemExit("MainActivity onCreate marker not found")
+              src = src.replace(
+                  on_create_marker,
+                  on_create_marker + "    enableImmersiveMode()\n",
+                  1,
+              )
 
+              immersive_methods = """
+          
             override fun onWindowFocusChanged(hasFocus: Boolean) {
               super.onWindowFocusChanged(hasFocus)
               if (hasFocus) enableImmersiveMode()
@@ -143,10 +153,11 @@ jobs:
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
               }
             }
-          }"""
-              if old not in src:
-                  raise SystemExit("MainActivity class marker not found")
-              src = src.replace(old, new, 1)
+          """
+              final_brace = src.rfind("}")
+              if final_brace < 0:
+                  raise SystemExit("MainActivity closing brace not found")
+              src = src[:final_brace] + immersive_methods + "\n" + src[final_brace:]
 
           path.write_text(src, encoding="utf-8")
           print("Immersive fullscreen enabled in", path)
