@@ -352,6 +352,13 @@ header = header.replace(
     'className="truncate text-base font-heading font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 sm:text-xl"',
     1,
 )
+
+# WFE mobile: oculta titulo da aba no topo.
+header = header.replace(
+    'className="truncate text-base font-heading font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 sm:text-xl"',
+    'className="hidden truncate text-base font-heading font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 lg:block lg:text-xl"',
+    1,
+)
 header = header.replace(
     '<div className="relative mx-auto flex-1 px-10">',
     '<div className="relative mx-auto hidden flex-1 px-4 md:block lg:px-10">',
@@ -966,6 +973,76 @@ print("WFE Android preparado em", root)
 squad_path = root / "src" / "components" / "squad" / "SquadRosterView.tsx"
 squad = squad_path.read_text(encoding="utf-8")
 
+squad = squad.replace(
+    '  const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);',
+    '  const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);\n  const [openPositionsPlayerId, setOpenPositionsPlayerId] = useState<string | null>(null);',
+    1,
+)
+
+# WFE Elenco: posicao principal em uma linha; toque abre as demais sem aumentar a altura da linha.
+old_position_meta = '''  const renderPreferredPositionMeta = (player: PlayerData) => (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {getPreferredPositions(player).map((position, index) => (
+        <Badge
+          key={`${player.id}-${position}`}
+          variant={index === 0 ? positionBadgeVariant(position) : "neutral"}
+          size="sm"
+        >
+          {translatePositionAbbreviation(t, position)}
+        </Badge>
+      ))}
+    </div>
+  );
+'''
+new_position_meta = '''  const renderPreferredPositionMeta = (player: PlayerData) => {
+    const positions = getPreferredPositions(player);
+    const primaryPosition = positions[0] ?? player.position;
+    const secondaryPositions = positions.slice(1);
+    const isOpen = openPositionsPlayerId === player.id;
+
+    return (
+      <div className="relative inline-flex">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpenPositionsPlayerId(isOpen ? null : player.id);
+          }}
+          className="inline-flex items-center gap-1 rounded-md"
+          aria-expanded={isOpen}
+          aria-label={`Posições de ${player.match_name}`}
+        >
+          <Badge variant={positionBadgeVariant(primaryPosition)} size="sm">
+            {translatePositionAbbreviation(t, primaryPosition)}
+          </Badge>
+          {secondaryPositions.length > 0 ? (
+            <span className="text-[9px] font-bold text-gray-400">+{secondaryPositions.length}</span>
+          ) : null}
+        </button>
+
+        {isOpen && secondaryPositions.length > 0 ? (
+          <div
+            className="absolute left-0 top-full z-50 mt-1 min-w-max rounded-lg border border-gray-200 bg-white p-1.5 shadow-xl dark:border-navy-600 dark:bg-navy-800"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap gap-1">
+              {secondaryPositions.map((position) => (
+                <Badge key={`${player.id}-extra-${position}`} variant="neutral" size="sm">
+                  {translatePositionAbbreviation(t, position)}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+'''
+if old_position_meta not in squad:
+    raise RuntimeError("WFE Elenco: bloco de posicoes nao encontrado")
+squad = squad.replace(old_position_meta, new_position_meta, 1)
+
+
 def _wrap_hidden_block(source: str, start_marker: str, end_marker: str, end_inclusive: bool = False) -> str:
     start = source.find(start_marker)
     if start < 0:
@@ -1057,20 +1134,65 @@ squad_path.write_text(squad, encoding="utf-8")
 
 
 
-# Elenco: remove coluna Caracteristicas para reduzir a largura da tabela no mobile.
-traits_header = '''                <th className="py-2.5 px-4 font-heading font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+# Elenco: remove coluna Caracteristicas e deixa as colunas essenciais caberem no celular.
+squad = squad.replace('import { TraitList } from "../TraitBadge";\n', '', 1)
+
+traits_header = '''                <th className="py-1 px-2 font-heading font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   {t("squad.traits")}
                 </th>
 '''
+if traits_header not in squad:
+    raise RuntimeError("WFE Elenco: cabecalho Caracteristicas nao encontrado")
 squad = squad.replace(traits_header, "", 1)
-traits_cell = '''                      {/* Traits — all of them, wraps as needed */}
-                      <td className="py-2.5 px-4">
-                        <TraitList traits={player.traits || []} size="xs" />
+
+traits_start = squad.find('                      {/* Traits — all of them, wraps as needed */}')
+if traits_start < 0:
+    raise RuntimeError("WFE Elenco: celula Caracteristicas nao encontrada")
+traits_end = squad.find('                      <td className="py-1 px-2 text-xs text-gray-600 dark:text-gray-400 tabular-nums">', traits_start)
+if traits_end < 0:
+    raise RuntimeError("WFE Elenco: fim da celula Caracteristicas nao encontrado")
+squad = squad[:traits_start] + squad[traits_end:]
+
+# No celular, Condicao/Moral/OVR saem da grade principal para eliminar a rolagem horizontal.
+for col in ("condition", "morale", "ovr"):
+    marker = f'                <SquadSortHeader\n                  col="{col}"'
+    start = squad.find(marker)
+    if start >= 0:
+        end = squad.find('                />', start)
+        if end >= 0:
+            end += len('                />')
+            block = squad[start:end]
+            squad = squad[:start] + '                {false && (\n' + block + '\n                )}' + squad[end:]
+
+condition_cell = '''                      <td className="py-1 px-2 w-20">
+                        <ProgressBar value={player.condition} variant="auto" size="sm" showLabel />
                       </td>
 '''
-squad = squad.replace(traits_cell, "", 1)
+squad = squad.replace(condition_cell, '                      {false && (\n' + condition_cell + '                      )}\n', 1)
+
+morale_cell = '''                      <td className="py-1 px-2 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                        {player.morale}
+                      </td>
+'''
+squad = squad.replace(morale_cell, '                      {false && (\n' + morale_cell + '                      )}\n', 1)
+
+ovr_start = squad.find('                      {/* OVR (moved next to identity block) */}')
+contract_start = squad.find('                      {/* Contract: years + risk + expires_on + market pills */}', ovr_start + 1) if ovr_start >= 0 else -1
+if ovr_start >= 0 and contract_start >= 0:
+    block = squad[ovr_start:contract_start]
+    squad = squad[:ovr_start] + '                      {false && (<>\n' + block + '                      </>)}\n' + squad[contract_start:]
+
+# Linhas e celulas ainda mais enxutas.
+squad = squad.replace('className="w-full table-auto text-left text-xs border-collapse"', 'className="w-full table-fixed text-left text-[11px] border-collapse"', 1)
+squad = squad.replace('className="py-1 px-2 tabular-nums text-xs font-medium', 'className="w-8 py-0.5 px-1 tabular-nums text-[11px] font-medium', 1)
+squad = squad.replace('className="py-1 px-2">\n                        <div className="flex items-center gap-2">', 'className="py-0.5 px-1">\n                        <div className="flex items-center gap-1.5">', 1)
+squad = squad.replace('className="py-1 px-2">{renderPreferredPositionMeta(player)}</td>', 'className="w-16 py-0.5 px-1">{renderPreferredPositionMeta(player)}</td>', 1)
+squad = squad.replace('className="py-1 px-2 text-xs text-gray-600 dark:text-gray-400 tabular-nums">\n                        {age}', 'className="w-10 py-0.5 px-1 text-[11px] text-gray-600 dark:text-gray-400 tabular-nums">\n                        {age}', 1)
+squad = squad.replace('className="h-7 w-7 shrink-0', 'className="h-6 w-6 shrink-0', 1)
+squad = squad.replace('font-semibold text-xs text-gray-900', 'font-semibold text-[11px] text-gray-900')
+
 squad_path.write_text(squad, encoding="utf-8")
-print("CM mobile: coluna Caracteristicas removida do Elenco")
+print("WFE mobile: Elenco em uma linha, Caracteristicas removida e posicoes secundarias sob toque")
 
 # Taticas mobile CM: compacta cabecalho, campo antes da lista e remove filtros visuais.
 # Mantem toda a logica/engine existente; os ajustes abaixo sao apenas de apresentacao mobile.
@@ -1557,6 +1679,16 @@ checks = [
         root / "src" / "components" / "dashboard" / "DashboardHeader.tsx",
         'currentDate.split("|")[1]',
         "data mobile em duas linhas",
+    ),
+    (
+        root / "src" / "components" / "dashboard" / "DashboardHeader.tsx",
+        'hidden truncate text-base',
+        "titulo da aba oculto no topo mobile",
+    ),
+    (
+        root / "src" / "components" / "squad" / "SquadRosterView.tsx",
+        'openPositionsPlayerId',
+        "posicoes secundarias por toque",
     ),
     (
         root / "src" / "components" / "tactics" / "TacticsCommandBar.tsx",
