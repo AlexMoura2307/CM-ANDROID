@@ -1929,7 +1929,7 @@ squad_view = squad_view.replace(
 )
 
 # Botao visivel Escalar ao lado das acoes, sem alargar demais a linha.
-action_button_anchor = '''                      <td className="py-2.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+action_button_anchor = '''                      <td className="py-1 px-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <button'''
 action_button_repl = '''                      <td className="py-2.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         {squadView === "Senior" ? (
