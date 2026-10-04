@@ -211,20 +211,45 @@ def _position(player):
     }
     return exact.get(raw, "Midfielder")
 
+NATION_CODE_MAP = {
+    "BRA": "BR", "ARG": "AR", "URU": "UY", "COL": "CO", "PAR": "PY", "PRY": "PY",
+    "CHI": "CL", "CHL": "CL", "ECU": "EC", "VEN": "VE", "PER": "PE", "BOL": "BO",
+    "USA": "US", "CAN": "CA", "MEX": "MX", "CRC": "CR", "PAN": "PA", "DOM": "DO",
+    "GHA": "GH", "NGA": "NG", "CMR": "CM", "SEN": "SN", "CIV": "CI", "MAR": "MA",
+    "ALG": "DZ", "TUN": "TN", "EGY": "EG", "RSA": "ZA", "CPV": "CV", "ANG": "AO",
+    "JPN": "JP", "KOR": "KR", "CHN": "CN", "AUS": "AU", "NZL": "NZ",
+    "POR": "PT", "ESP": "ES", "FRA": "FR", "GER": "DE", "DEU": "DE", "ITA": "IT",
+    "BEL": "BE", "NED": "NL", "NLD": "NL", "SUI": "CH", "CHE": "CH", "AUT": "AT",
+    "POL": "PL", "CRO": "HR", "HRV": "HR", "SRB": "RS", "BIH": "BA", "SLO": "SI",
+    "SVN": "SI", "SVK": "SK", "CZE": "CZ", "HUN": "HU", "ROU": "RO", "BUL": "BG",
+    "GRE": "GR", "GRC": "GR", "TUR": "TR", "UKR": "UA", "RUS": "RU", "DEN": "DK",
+    "DNK": "DK", "NOR": "NO", "SWE": "SE", "FIN": "FI", "ISL": "IS",
+    # As nacoes britanicas usam os codigos futebolisticos que o WFE reconhece.
+    "ENG": "ENG", "SCO": "SCO", "WAL": "WAL", "NIR": "NIR",
+}
+
+def _normalise_nation_code(value):
+    code = str(value or "").strip().upper()
+    if not code:
+        return "BR"
+    if len(code) == 2:
+        return code
+    return NATION_CODE_MAP.get(code, "BR")
+
 def _nationality(player):
     for key in ("citizenship", "nationality"):
         raw = player.get(key)
         if isinstance(raw, str) and 2 <= len(raw) <= 3:
-            return raw.upper()
+            return _normalise_nation_code(raw)
         if isinstance(raw, dict):
             code = raw.get("alpha2") or raw.get("abbreviation") or raw.get("code")
             if code:
-                return str(code).upper()
+                return _normalise_nation_code(code)
     birth_place = player.get("birthPlace") or {}
     if isinstance(birth_place, dict):
         country = birth_place.get("country")
         if isinstance(country, str) and 2 <= len(country) <= 3:
-            return country.upper()
+            return _normalise_nation_code(country)
     return "BR"
 
 def _names(player):
