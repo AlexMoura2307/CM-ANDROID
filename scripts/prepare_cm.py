@@ -7,7 +7,7 @@ root = Path("upstream")
 # Nome do pacote/scripts Android
 pkg_path = root / "package.json"
 pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
-pkg["name"] = "cm-football-manager"
+pkg["name"] = "wfe-world-football-empire"
 scripts = pkg.setdefault("scripts", {})
 scripts["android:init"] = "tauri android init"
 scripts["android:dev"] = "tauri android dev"
@@ -17,16 +17,17 @@ pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + "\n", encodi
 # Lockfile: só troca o nome do pacote raiz para manter npm ci coerente
 lock_path = root / "package-lock.json"
 lock = json.loads(lock_path.read_text(encoding="utf-8"))
-lock["name"] = "cm-football-manager"
+lock["name"] = "wfe-world-football-empire"
 if "" in lock.get("packages", {}):
-    lock["packages"][""]["name"] = "cm-football-manager"
+    lock["packages"][""]["name"] = "wfe-world-football-empire"
 lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 # Tauri / Android - versão de teste instalada ao lado do CM atual
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "CM Teste 3"
+conf["productName"] = "WFE"
 conf["identifier"] = "com.cm.footballmanager.test3"
+conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "WFE - World Football Empire"
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources["resources/cm-brasil-2026-fase1.ofm"] = "packages/cm-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -131,7 +132,8 @@ settings_rs_path.write_text(settings_rs, encoding="utf-8")
 locales_dir = root / "src" / "i18n" / "locales"
 for locale_path in locales_dir.glob("*.json"):
     data = json.loads(locale_path.read_text(encoding="utf-8"))
-    data.setdefault("app", {})["name"] = "CM"
+    data.setdefault("app", {})["name"] = "WFE"
+    data.setdefault("app", {})["publisher"] = "World Football Empire"
     locale_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 # Título da janela
@@ -139,31 +141,65 @@ app_path = root / "src" / "App.tsx"
 app = app_path.read_text(encoding="utf-8")
 app = app.replace(
     'await getCurrentWindow().setTitle(`Openfoot Manager ${formatAppVersion()}`);',
-    'await getCurrentWindow().setTitle(`CM Teste ${formatAppVersion()}`);',
+    'await getCurrentWindow().setTitle(`WFE - World Football Empire ${formatAppVersion()}`);',
 )
 app_path.write_text(app, encoding="utf-8")
 
-# Logo temporário CM
+# Identidade visual WFE - World Football Empire
 logo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
-  <title id="title">CM</title>
-  <desc id="desc">CM Football Manager</desc>
+  <title id="title">WFE</title>
+  <desc id="desc">World Football Empire</desc>
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#18c98b"/>
-      <stop offset="1" stop-color="#d9dd35"/>
+    <linearGradient id="wfeG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16c784"/>
+      <stop offset="1" stop-color="#d6df32"/>
     </linearGradient>
   </defs>
-  <rect width="1200" height="360" rx="44" fill="#101a33"/>
-  <circle cx="190" cy="180" r="112" fill="url(#g)"/>
-  <text x="355" y="216" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="160" fill="#fff">CM</text>
-  <text x="365" y="286" font-family="Arial, sans-serif" font-weight="700" font-size="38" fill="#9aa7c1" letter-spacing="12">FOOTBALL MANAGER</text>
+  <rect width="1200" height="360" rx="46" fill="#101a33"/>
+  <path d="M180 44 298 92v98c0 70-46 112-118 134C108 302 62 260 62 190V92Z" fill="url(#wfeG)"/>
+  <path d="M104 121h152v49H104zm0 69h152v49H104z" fill="#101a33" opacity=".92"/>
+  <text x="362" y="208" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="146" fill="#fff">WFE</text>
+  <text x="370" y="278" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="34" fill="#a9b4ca" letter-spacing="10">WORLD FOOTBALL EMPIRE</text>
 </svg>
 """
-(root / "public" / "cm-logo.svg").write_text(logo, encoding="utf-8")
+(root / "public" / "wfe-logo.svg").write_text(logo, encoding="utf-8")
+
+app_icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16c784"/>
+      <stop offset="1" stop-color="#d6df32"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="#101a33"/>
+  <path d="M512 116 792 228v230c0 190-111 335-280 410-169-75-280-220-280-410V228Z" fill="url(#g)"/>
+  <text x="512" y="585" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="238" fill="#101a33">WFE</text>
+</svg>
+"""
+(root / "public" / "wfe-app-icon.svg").write_text(app_icon, encoding="utf-8")
+
+# Browser/index branding
+index_path = root / "index.html"
+index_src = index_path.read_text(encoding="utf-8")
+index_src = index_src.replace(
+    '<link rel="icon" type="image/png" href="/openfootmanager_icon.png" />',
+    '<link rel="icon" type="image/svg+xml" href="/wfe-app-icon.svg" />',
+)
+index_src = index_src.replace("<title>Openfoot Manager</title>", "<title>WFE - World Football Empire</title>")
+index_path.write_text(index_src, encoding="utf-8")
+
+# Startup log branding (not gameplay logic).
+main_ts_path = root / "src" / "main.tsx"
+main_ts = main_ts_path.read_text(encoding="utf-8")
+main_ts = main_ts.replace(
+    'logInfo(\`[startup] Openfoot Manager \${formatAppVersion()} (\${navigator.userAgent})\`);',
+    'logInfo(\`[startup] WFE - World Football Empire \${formatAppVersion()} (\${navigator.userAgent})\`);',
+)
+main_ts_path.write_text(main_ts, encoding="utf-8")
 
 menu_path = root / "src" / "pages" / "MainMenu.tsx"
 menu = menu_path.read_text(encoding="utf-8")
-menu = menu.replace('src="/openfootlogo.svg"', 'src="/cm-logo.svg"')
+menu = menu.replace('src="/openfootlogo.svg"', 'src="/wfe-logo.svg"')
 menu = menu.replace(
     'className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-navy-900 transition-colors duration-500 relative overflow-x-hidden"',
     'className="min-h-screen flex items-center justify-center bg-gray-100 px-3 py-6 dark:bg-navy-900 transition-colors duration-500 relative overflow-x-hidden sm:px-4 sm:py-8"',
@@ -291,6 +327,7 @@ dashboard_path.write_text(dashboard, encoding="utf-8")
 # Cabeçalho mais compacto.
 header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
 header = header_path.read_text(encoding="utf-8")
+header = header.replace('  Calendar as CalendarIcon,\n', '', 1)
 header = header.replace(
     '"flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-all hover:cursor-pointer"',
     '"flex items-center gap-1.5 rounded-lg px-2 py-2 text-[0px] font-heading font-bold uppercase tracking-wider transition-all hover:cursor-pointer sm:px-3 sm:py-2.5 sm:text-sm"',
@@ -1067,6 +1104,7 @@ dashboard = dashboard.replace(
   const currentDate = cmWeekday + "|" + cmDay + "/" + cmMonths[Number(cmMonth) - 1] + "/" + cmYear;''',
     1,
 )
+dashboard = dashboard.replace("  formatDateFull,\n", "", 1)
 dashboard_path.write_text(dashboard, encoding="utf-8")
 
 header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
@@ -1450,6 +1488,11 @@ print("CM mobile: partida ao vivo, intervalo, estatisticas e escalacoes responsi
 # Garante que o build realmente contem os ajustes solicitados. Se algum replace falhar,
 # a compilacao para aqui em vez de gerar um APK aparentemente "novo" sem as mudancas.
 checks = [
+    (
+        root / "src" / "pages" / "MainMenu.tsx",
+        'src="/wfe-logo.svg"',
+        "identidade WFE aplicada",
+    ),
     (
         root / "src" / "pages" / "Dashboard.tsx",
         'top-12',
