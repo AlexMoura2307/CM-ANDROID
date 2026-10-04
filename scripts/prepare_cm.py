@@ -25,18 +25,18 @@ lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", enco
 # Tauri / Android - versão de teste instalada ao lado do CM atual
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "WFE"
-conf["identifier"] = "com.cm.footballmanager.test3"
+conf["productName"] = "World Football Empire"
+conf["identifier"] = "com.wfe.worldfootballempire.test1"
 conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "WFE - World Football Empire"
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
-resources["resources/cm-brasil-2026-fase1.ofm"] = "packages/cm-brasil-2026-fase1.ofm"
+resources["resources/wfe-brasil-2026-fase1.ofm"] = "packages/wfe-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 # Base Brasil embutida: grava os bytes diretamente no app-data.
 # Isso evita depender do resource_dir no Android, que não expôs o .ofm como esperado.
 world_path = root / "src-tauri" / "src" / "commands" / "world.rs"
 world_src = world_path.read_text(encoding="utf-8")
-if "ensure_bundled_cm_package" not in world_src:
+if "ensure_bundled_wfe_package" not in world_src:
     marker = """fn packages_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let app_data_dir = app_handle
         .path()
@@ -47,24 +47,24 @@ if "ensure_bundled_cm_package" not in world_src:
 """
     helper = marker + r'''
 
-const CM_BRASIL_PACKAGE_BYTES: &[u8] = include_bytes!(concat!(
+const WFE_BRASIL_PACKAGE_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/resources/cm-brasil-2026-fase1.ofm"
+    "/resources/wfe-brasil-2026-fase1.ofm"
 ));
 
-fn ensure_bundled_cm_package(app_handle: &tauri::AppHandle) -> Result<(), String> {
+fn ensure_bundled_wfe_package(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let dir = packages_dir(app_handle)?;
     std::fs::create_dir_all(&dir)
         .map_err(|_| "be.error.package.installFailed".to_string())?;
-    let dest = dir.join("cm-brasil-2026-fase1.ofm");
+    let dest = dir.join("wfe-brasil-2026-fase1.ofm");
 
     let should_write = match std::fs::metadata(&dest) {
-        Ok(meta) => meta.len() != CM_BRASIL_PACKAGE_BYTES.len() as u64,
+        Ok(meta) => meta.len() != WFE_BRASIL_PACKAGE_BYTES.len() as u64,
         Err(_) => true,
     };
 
     if should_write {
-        std::fs::write(&dest, CM_BRASIL_PACKAGE_BYTES)
+        std::fs::write(&dest, WFE_BRASIL_PACKAGE_BYTES)
             .map_err(|_| "be.error.package.installFailed".to_string())?;
     }
     Ok(())
@@ -79,7 +79,7 @@ fn ensure_bundled_cm_package(app_handle: &tauri::AppHandle) -> Result<(), String
 ) -> Result<Vec<ofm_core::generator::PackageInfo>, String> {
     info!("[cmd] list_installed_packages");
 """
-    list_repl = list_marker + """    ensure_bundled_cm_package(&app_handle)?;
+    list_repl = list_marker + """    ensure_bundled_wfe_package(&app_handle)?;
 """
     if list_marker not in world_src:
         raise RuntimeError("list_installed_packages marker not found")
@@ -132,7 +132,7 @@ settings_rs_path.write_text(settings_rs, encoding="utf-8")
 locales_dir = root / "src" / "i18n" / "locales"
 for locale_path in locales_dir.glob("*.json"):
     data = json.loads(locale_path.read_text(encoding="utf-8"))
-    data.setdefault("app", {})["name"] = "WFE"
+    data.setdefault("app", {})["name"] = "World Football Empire"
     data.setdefault("app", {})["publisher"] = "World Football Empire"
     locale_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -1095,6 +1095,7 @@ header_path.write_text(header, encoding="utf-8")
 # Cabecalho mobile: remove nome da aba e usa data em duas linhas.
 dashboard_path = root / "src" / "pages" / "Dashboard.tsx"
 dashboard = dashboard_path.read_text(encoding="utf-8")
+dashboard = dashboard.replace('  formatDateFull,\n', '', 1)
 dashboard = dashboard.replace(
     'const currentDate = formatDateFull(gameState.clock.current_date, settings.language);',
     '''const [cmYear, cmMonth, cmDay] = gameState.clock.current_date.slice(0, 10).split("-");
@@ -1484,7 +1485,7 @@ match_panels_path.write_text(match_panels, encoding="utf-8")
 
 print("CM mobile: partida ao vivo, intervalo, estatisticas e escalacoes responsivas aplicadas")
 
-# Validacao forte do pacote CM Teste 3
+# Validacao forte do pacote WFE
 # Garante que o build realmente contem os ajustes solicitados. Se algum replace falhar,
 # a compilacao para aqui em vez de gerar um APK aparentemente "novo" sem as mudancas.
 checks = [
@@ -1564,4 +1565,4 @@ for path, needle, label in checks:
     if needle not in generated:
         raise RuntimeError(f"CM Teste 3: ajuste ausente no build: {label}")
 
-print("CM Teste 3 validado: ajustes visuais confirmados antes do build")
+print("WFE validado: ajustes visuais confirmados antes do build")
