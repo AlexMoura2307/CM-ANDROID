@@ -86,33 +86,27 @@ teams=[team(x,[650,900],[5000000,25000000]) for x in A]+[team(x,[450,700],[20000
 
 
 # Elencos reais da Serie A 2026.
-# Fonte operacional: endpoint publico do SofaScore. Os IDs dos jogadores sao
-# preservados no WFE para evitar duplicacao quando um atleta trocar de clube.
-SOFASCORE_SEASON_ID = 87678
-SOFASCORE_TOURNAMENT_ID = 325
-SOFASCORE_BASES = [
-    "https://www.sofascore.com/api/v1",
-    "https://api.sofascore.com/api/v1",
-]
+# Fonte operacional: API publica da ESPN. Os dados sao materializados no pacote
+# no momento do build; o APK final nao depende de internet para exibir o elenco.
+ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1"
 
-def _http_json(path):
+def _http_json_url(url):
     last_error = None
     for attempt in range(4):
-        for base in SOFASCORE_BASES:
-            try:
-                request = urllib.request.Request(
-                    base + path,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
-                        "Accept": "application/json,text/plain,*/*",
-                    },
-                )
-                with urllib.request.urlopen(request, timeout=25) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except Exception as exc:
-                last_error = exc
-        time.sleep(2 + attempt * 2)
-    raise RuntimeError(f"SofaScore indisponivel para {path}: {last_error}")
+        try:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+                    "Accept": "application/json,text/plain,*/*",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=25) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            last_error = exc
+            time.sleep(2 + attempt * 2)
+    raise RuntimeError(f"ESPN indisponivel para {url}: {last_error}")
 
 def _norm(value):
     value = unicodedata.normalize("NFKD", value or "")
@@ -121,7 +115,7 @@ def _norm(value):
         "".join(ch if ch.isalnum() else " " for ch in value.lower()).split()
     )
 
-SOFA_ALIASES = {
+ESPN_ALIASES = {
     "athletico-pr": ["athletico paranaense", "athletico pr", "athletico"],
     "atletico-mg": ["atletico mineiro", "atletico mg"],
     "bahia": ["bahia", "ec bahia"],
@@ -145,173 +139,169 @@ SOFA_ALIASES = {
 }
 
 TEAM_OVR_BASE = {
-    "flamengo": 81,
-    "palmeiras": 81,
-    "athletico-pr": 76,
-    "fluminense": 77,
-    "bahia": 77,
-    "cruzeiro": 76,
-    "atletico-mg": 76,
-    "santos": 74,
-    "red-bull-bragantino": 74,
-    "sao-paulo": 75,
-    "botafogo-rj": 74,
-    "corinthians": 74,
-    "internacional": 74,
-    "gremio": 73,
-    "vasco": 73,
-    "mirassol": 71,
-    "coritiba": 71,
-    "vitoria": 71,
-    "chapecoense": 69,
-    "remo": 69,
+    "flamengo": 81, "palmeiras": 81, "athletico-pr": 76, "fluminense": 77,
+    "bahia": 77, "cruzeiro": 76, "atletico-mg": 76, "santos": 74,
+    "red-bull-bragantino": 74, "sao-paulo": 75, "botafogo-rj": 74,
+    "corinthians": 74, "internacional": 74, "gremio": 73, "vasco": 73,
+    "mirassol": 71, "coritiba": 71, "vitoria": 71, "chapecoense": 69, "remo": 69,
 }
 
+def _espn_teams(payload):
+    try:
+        entries = payload["sports"][0]["leagues"][0]["teams"]
+    except (KeyError, IndexError, TypeError):
+        entries = payload.get("teams", [])
+    result = []
+    for entry in entries:
+        team = entry.get("team") if isinstance(entry, dict) else None
+        result.append(team or entry)
+    return [team for team in result if isinstance(team, dict) and team.get("id")]
+
+def _espn_roster_items(payload):
+    result = []
+    for group in payload.get("athletes", []):
+        if isinstance(group, dict) and isinstance(group.get("items"), list):
+            result.extend(group["items"])
+        elif isinstance(group, dict) and group.get("id"):
+            result.append(group)
+    return result
+
 def _birth_date(player):
-    raw = player.get("dateOfBirth")
+    raw = player.get("birthDate") or player.get("dateOfBirth")
     if isinstance(raw, str) and len(raw) >= 10:
         return raw[:10]
-    ts = player.get("dateOfBirthTimestamp")
-    if isinstance(ts, (int, float)) and ts > 0:
-        return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
     return None
 
-def _age_from_birth(value):
-    if not value:
-        return 25
+def _age_from_player(player, birth):
+    if birth:
+        try:
+            born = datetime.strptime(birth, "%Y-%m-%d").date()
+            return max(15, 2026 - born.year)
+        except Exception:
+            pass
     try:
-        born = datetime.strptime(value, "%Y-%m-%d").date()
-        return max(15, 2026 - born.year)
+        return int(player.get("age") or 25)
     except Exception:
         return 25
 
 def _position(player):
+    position = player.get("position") or {}
     raw = str(
-        player.get("specificPosition")
+        (position.get("abbreviation") if isinstance(position, dict) else "")
+        or (position.get("name") if isinstance(position, dict) else "")
         or player.get("position")
-        or player.get("positionCode")
         or ""
     ).strip().upper().replace("-", "").replace("_", "")
     exact = {
         "G": "Goalkeeper", "GK": "Goalkeeper", "GOALKEEPER": "Goalkeeper",
-        "DC": "CenterBack", "CB": "CenterBack", "CENTREBACK": "CenterBack", "CENTERBACK": "CenterBack",
-        "DL": "LeftBack", "LB": "LeftBack", "LEFTBACK": "LeftBack",
-        "DR": "RightBack", "RB": "RightBack", "RIGHTBACK": "RightBack",
+        "D": "Defender", "DEF": "Defender", "DEFENDER": "Defender",
+        "CB": "CenterBack", "DC": "CenterBack", "CENTREBACK": "CenterBack", "CENTERBACK": "CenterBack",
+        "LB": "LeftBack", "DL": "LeftBack", "LEFTBACK": "LeftBack",
+        "RB": "RightBack", "DR": "RightBack", "RIGHTBACK": "RightBack",
+        "M": "Midfielder", "MID": "Midfielder", "MIDFIELDER": "Midfielder",
         "DM": "DefensiveMidfielder", "DMC": "DefensiveMidfielder",
-        "MC": "CentralMidfielder", "CM": "CentralMidfielder", "CENTRALMIDFIELDER": "CentralMidfielder",
-        "ML": "LeftMidfielder", "LM": "LeftMidfielder",
-        "MR": "RightMidfielder", "RM": "RightMidfielder",
+        "CM": "CentralMidfielder", "MC": "CentralMidfielder", "CENTRALMIDFIELDER": "CentralMidfielder",
         "AM": "AttackingMidfielder", "AMC": "AttackingMidfielder",
-        "AML": "LeftWinger", "LW": "LeftWinger",
-        "AMR": "RightWinger", "RW": "RightWinger",
-        "ST": "Striker", "CF": "Striker", "STRIKER": "Striker",
-        "D": "Defender", "DEFENDER": "Defender",
-        "M": "Midfielder", "MIDFIELDER": "Midfielder",
+        "LM": "LeftMidfielder", "ML": "LeftMidfielder",
+        "RM": "RightMidfielder", "MR": "RightMidfielder",
         "F": "Forward", "FW": "Forward", "FORWARD": "Forward",
+        "LW": "LeftWinger", "AML": "LeftWinger",
+        "RW": "RightWinger", "AMR": "RightWinger",
+        "ST": "Striker", "CF": "Striker", "STRIKER": "Striker",
     }
     return exact.get(raw, "Midfielder")
 
-def _foot(player):
-    value = str(player.get("preferredFoot") or player.get("foot") or "Right").lower()
-    if "left" in value:
-        return "Left"
-    if "both" in value:
-        return "Both"
-    return "Right"
+def _nationality(player):
+    for key in ("citizenship", "nationality"):
+        raw = player.get(key)
+        if isinstance(raw, str) and 2 <= len(raw) <= 3:
+            return raw.upper()
+        if isinstance(raw, dict):
+            code = raw.get("alpha2") or raw.get("abbreviation") or raw.get("code")
+            if code:
+                return str(code).upper()
+    birth_place = player.get("birthPlace") or {}
+    if isinstance(birth_place, dict):
+        country = birth_place.get("country")
+        if isinstance(country, str) and 2 <= len(country) <= 3:
+            return country.upper()
+    return "BR"
 
 def _names(player):
-    name = (player.get("name") or player.get("shortName") or "Jogador").strip()
+    name = (player.get("displayName") or player.get("fullName") or player.get("name") or "Jogador").strip()
     first = (player.get("firstName") or "").strip()
     last = (player.get("lastName") or "").strip()
+    bits = name.split()
     if not first:
-        bits = name.split()
         first = bits[0] if bits else name
     if not last:
-        bits = name.split()
         last = " ".join(bits[1:]) if len(bits) > 1 else first
     return name, first, last
 
-def _rating(team_id, sofa_player_id, age):
+def _rating(team_id, player_id, age):
     base = TEAM_OVR_BASE.get(team_id, 72)
-    jitter = ((int(sofa_player_id) * 37) % 9) - 4
+    jitter = ((int(player_id) * 37) % 9) - 4
     age_adj = -3 if age <= 19 else (-1 if age >= 34 else 0)
     return max(58, min(85, base + jitter + age_adj))
 
-def _potential(overall, age, sofa_player_id):
+def _potential(overall, age, player_id):
     if age <= 18:
-        bonus = 8 + (int(sofa_player_id) % 5)
+        bonus = 8 + (int(player_id) % 5)
     elif age <= 21:
-        bonus = 5 + (int(sofa_player_id) % 4)
+        bonus = 5 + (int(player_id) % 4)
     elif age <= 24:
-        bonus = 2 + (int(sofa_player_id) % 3)
+        bonus = 2 + (int(player_id) % 3)
     else:
         bonus = 0
     return max(overall, min(92, overall + bonus))
 
 def fetch_real_serie_a_players():
-    standings = _http_json(
-        f"/unique-tournament/{SOFASCORE_TOURNAMENT_ID}/season/{SOFASCORE_SEASON_ID}/standings/total"
-    )
-    sofa_teams = {}
-    for table in standings.get("standings", []):
-        for row in table.get("rows", []):
-            item = row.get("team") or {}
-            if item.get("id") and item.get("name"):
-                sofa_teams[_norm(item["name"])] = item
+    teams_payload = _http_json_url(ESPN_BASE + "/teams")
+    espn_teams = {_norm(team.get("displayName") or team.get("name")): team for team in _espn_teams(teams_payload)}
 
     results = []
     counts = {}
     missing = []
+
     for team_id, *_ in A:
         found = None
-        aliases = [_norm(x) for x in SOFA_ALIASES.get(team_id, [])]
+        aliases = [_norm(value) for value in ESPN_ALIASES.get(team_id, [])]
         for alias in aliases:
-            if alias in sofa_teams:
-                found = sofa_teams[alias]
+            if alias in espn_teams:
+                found = espn_teams[alias]
                 break
         if found is None:
-            # ultima tentativa por inclusao para pequenas variacoes de nome
-            for key, item in sofa_teams.items():
+            for key, team in espn_teams.items():
                 if any(alias in key or key in alias for alias in aliases if len(alias) >= 5):
-                    found = item
+                    found = team
                     break
         if found is None:
             missing.append(team_id)
             continue
 
-        payload = _http_json(f"/team/{found['id']}/players")
+        payload = _http_json_url(ESPN_BASE + f"/teams/{found['id']}/roster")
         seen = set()
-        for entry in payload.get("players", []):
-            player = entry.get("player") or {}
-            sofa_id = player.get("id")
-            name = player.get("name")
-            if not sofa_id or not name or sofa_id in seen:
+        for player in _espn_roster_items(payload):
+            player_id = player.get("id")
+            if not player_id or str(player_id) in seen:
                 continue
-            seen.add(sofa_id)
+            seen.add(str(player_id))
 
             birth = _birth_date(player)
-            age = _age_from_birth(birth)
+            age = _age_from_player(player, birth)
             display_name, first, last = _names(player)
-            overall = _rating(team_id, sofa_id, age)
-            nationality = (
-                (player.get("country") or {}).get("alpha2")
-                or (player.get("country") or {}).get("alpha3")
-                or "BR"
-            ).upper()
+            overall = _rating(team_id, player_id, age)
 
             item = {
-                "id": f"sofa-{sofa_id}",
+                "id": f"espn-{player_id}",
                 "name": display_name,
                 "firstName": first,
                 "lastName": last,
                 "club": team_id,
-                "nationality": nationality,
+                "nationality": _nationality(player),
                 "position": _position(player),
-                "footedness": _foot(player),
                 "overall": overall,
-                "potential": _potential(overall, age, sofa_id),
-                # Elenco profissional real. A Base real sera cadastrada separadamente;
-                # nao classificamos todo sub-20 automaticamente como jogador da Base.
+                "potential": _potential(overall, age, player_id),
                 "youth": False,
             }
             if birth:
@@ -321,13 +311,13 @@ def fetch_real_serie_a_players():
             results.append(item)
 
         counts[team_id] = len(seen)
-        time.sleep(0.15)
+        time.sleep(0.10)
 
     if missing:
-        raise RuntimeError("Times da Serie A nao encontrados no SofaScore: " + ", ".join(missing))
+        raise RuntimeError("Times da Serie A nao encontrados na ESPN: " + ", ".join(missing))
     too_small = {team_id: count for team_id, count in counts.items() if count < 15}
     if too_small:
-        raise RuntimeError(f"Elencos reais incompletos no SofaScore: {too_small}")
+        raise RuntimeError(f"Elencos reais incompletos na ESPN: {too_small}")
     if len(results) < 360:
         raise RuntimeError(f"Poucos jogadores reais coletados para Serie A: {len(results)}")
 
