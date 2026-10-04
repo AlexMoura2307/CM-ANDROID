@@ -2133,22 +2133,27 @@ if filter_start < 0 or filter_end < 0:
 filters_block = transfers_src[filter_start:filter_end]
 transfers_src = (
     transfers_src[:filter_start]
-    + '      {view !== "youth" ? (\\n        <>\\n'
+    + '''      {view !== "youth" ? (
+        <>
+'''
     + filters_block
-    + '        </>\\n      ) : null}\\n\\n'
+    + '''        </>
+      ) : null}
+
+'''
     + transfers_src[filter_end:]
 )
 transfers_path.write_text(transfers_src, encoding="utf-8")
 
 scouting_path = root / "src" / "components" / "scouting" / "ScoutingTab.tsx"
 scouting_src = scouting_path.read_text(encoding="utf-8")
-youth_card_start = scouting_src.find('      {scouts.length > 0 && (\\n        <ScoutingYouthRecruitmentCard')
+youth_card_start = scouting_src.find('      {scouts.length > 0 && (\n        <ScoutingYouthRecruitmentCard')
 if youth_card_start >= 0:
     youth_card_end = scouting_src.find('      )}', youth_card_start)
     if youth_card_end >= 0:
         youth_card_end += len('      )}')
         old_block = scouting_src[youth_card_start:youth_card_end]
-        scouting_src = scouting_src[:youth_card_start] + '      {false && (<>\\n' + old_block + '\\n      </>)}' + scouting_src[youth_card_end:]
+        scouting_src = scouting_src[:youth_card_start] + '      {false && (<>\n' + old_block + '\n      </>)}' + scouting_src[youth_card_end:]
 scouting_path.write_text(scouting_src, encoding="utf-8")
 
 # A base Brasil embutida deve vir selecionada por padrao ao criar carreira.
