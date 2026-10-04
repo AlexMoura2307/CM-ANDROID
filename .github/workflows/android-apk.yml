@@ -106,6 +106,8 @@ jobs:
 
               old = "class MainActivity : TauriActivity()"
               new = """class MainActivity : TauriActivity() {
+            override val handleBackNavigation: Boolean = true
+
             override fun onCreate(savedInstanceState: Bundle?) {
               super.onCreate(savedInstanceState)
               enableImmersiveMode()
