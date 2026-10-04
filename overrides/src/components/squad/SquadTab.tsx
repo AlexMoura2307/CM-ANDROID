@@ -74,7 +74,7 @@ export default function SquadTab({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-3 gap-1 rounded-xl border border-gray-200 bg-white p-1 dark:border-navy-600 dark:bg-navy-800">
+      <div className="grid grid-cols-3 border-b border-gray-200 bg-white dark:border-navy-600 dark:bg-navy-800">
         {views.map((view) => (
           <button
             key={view.id}
@@ -82,8 +82,8 @@ export default function SquadTab({
             onClick={() => setActiveView(view.id)}
             className={
               activeView === view.id
-                ? "rounded-lg bg-primary-700 px-2 py-2 text-xs font-heading font-bold uppercase tracking-wide text-white shadow-sm"
-                : "rounded-lg px-2 py-2 text-xs font-heading font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                ? "border-b-2 border-primary-500 bg-primary-500/5 px-2 py-2.5 text-xs font-heading font-bold uppercase tracking-wide text-primary-600 dark:text-primary-400"
+                : "border-b-2 border-transparent px-2 py-2.5 text-xs font-heading font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
             }
           >
             {view.label}
