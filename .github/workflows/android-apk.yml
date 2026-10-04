@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Checkout CM build repo
+      - name: Checkout WFE build repo
         uses: actions/checkout@v4
 
       - name: Checkout OpenFoot Manager base
@@ -25,7 +25,7 @@ jobs:
           ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
           path: upstream
 
-      - name: Prepare CM customizations
+      - name: Prepare WFE customizations
         run: python3 scripts/prepare_cm.py
 
       - name: Setup Node.js
@@ -58,14 +58,14 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      - name: Generate embedded CM Brasil database
+      - name: Generate embedded WFE Brasil database
         shell: bash
         run: |
           python3 scripts/generate_brazil_fase1.py
-          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate cm-brasil-fase1
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate wfe-brasil-fase1
           mkdir -p upstream/src-tauri/resources
-          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack cm-brasil-fase1 --output upstream/src-tauri/resources/cm-brasil-2026-fase1.ofm
-          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/cm-brasil-2026-fase1.ofm
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-brasil-fase1 --output upstream/src-tauri/resources/wfe-brasil-2026-fase1.ofm
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/wfe-brasil-2026-fase1.ofm
 
       - name: Install frontend dependencies
         working-directory: upstream
