@@ -99,16 +99,16 @@ jobs:
           src = path.read_text(encoding="utf-8")
 
           if "enableImmersiveMode" not in src:
-              import_marker = "import app.tauri.TauriActivity\n"
               imports = """import android.os.Build
           import android.os.Bundle
           import android.view.View
           import android.view.WindowInsets
           import android.view.WindowInsetsController
           """
-              if import_marker not in src:
-                  raise SystemExit("TauriActivity import marker not found")
-              src = src.replace(import_marker, import_marker + imports, 1)
+              package_line_end = src.find("\n", src.find("package "))
+              if package_line_end < 0:
+                  raise SystemExit("Android package declaration not found")
+              src = src[: package_line_end + 1] + "\n" + imports + src[package_line_end + 1 :]
 
               old = "class MainActivity : TauriActivity()"
               new = """class MainActivity : TauriActivity() {
