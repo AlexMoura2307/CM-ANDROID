@@ -7,9 +7,9 @@ export interface DashboardNavigateContext {
 export interface DashboardProfileHistoryEntry {
   tab: string;
   playerId: string | null;
-  playerOptions: PlayerSelectionOptions | null;
+  playerOptions?: PlayerSelectionOptions | null;
   teamId: string | null;
-  initialMessageId: string | null;
+  initialMessageId?: string | null;
 }
 
 export interface DashboardProfileNavigationState {
@@ -141,9 +141,9 @@ export function goBackDashboardProfile(
     ...state,
     activeTab: previous.tab,
     selectedPlayerId: previous.playerId,
-    selectedPlayerOptions: previous.playerOptions,
+    selectedPlayerOptions: previous.playerOptions ?? null,
     selectedTeamId: previous.teamId,
-    initialMessageId: previous.initialMessageId,
+    initialMessageId: previous.initialMessageId ?? null,
     navHistory: state.navHistory.slice(0, -1),
   };
 }
