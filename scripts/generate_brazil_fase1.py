@@ -83,9 +83,9 @@ def team(x, rep, fin):
 teams=[team(x,[650,900],[5000000,25000000]) for x in A]+[team(x,[450,700],[2000000,12000000]) for x in B]+[team(x,[300,550],[800000,6000000]) for x in C]
 
 manifest={
- "schema":"world","id":"cm-brasil-2026-fase1","name":"CM Brasil 2026 - Fase 1",
- "description":"Base de teste CM Brasil com Series A, B e C e copas nacionais.",
- "version":"0.1.1","author":"CM","license":"CC0-1.0","packageType":"database",
+ "schema":"world","id":"cm-brasil-2026-fase1","name":"WFE Brasil 2026 - Fase 1",
+ "description":"Base WFE Brasil com Series A, B e C e copas nacionais.",
+ "version":"0.1.1","author":"WFE","license":"CC0-1.0","packageType":"database",
  "gameMinVersion":"0.3.0","formatVersion":1,"baseYear":2026,
  "defaultActiveRegions":[],"defaultActiveCompetitions":["br-serie-a","br-serie-b","br-serie-c","br-copa-do-brasil","br-supercopa"]
 }
