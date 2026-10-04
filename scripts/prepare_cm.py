@@ -1657,7 +1657,7 @@ checks = [
     ),
     (
         root / "src" / "components" / "squad" / "SquadRosterView.tsx",
-        'table-auto text-left text-xs',
+        'table-fixed text-left text-[11px]',
         "elenco compacto",
     ),
     (
