@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/android-apk.yml"
       - "scripts/prepare_cm.py"
+      - "scripts/generate_brazil_fase1.py"
+      - "overrides/**"
       - "README.md"
 
 jobs:
@@ -70,6 +72,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: upstream
         run: npm ci
+
+      - name: Frontend QA (TypeScript + Vite)
+        working-directory: upstream
+        run: npm run build
 
       - name: Generate WFE app icons
         working-directory: upstream
