@@ -37,6 +37,14 @@ jobs:
           cache: npm
           cache-dependency-path: upstream/package-lock.json
 
+      - name: Install frontend dependencies
+        working-directory: upstream
+        run: npm ci
+
+      - name: Frontend QA (TypeScript + Vite)
+        working-directory: upstream
+        run: npm run build
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -68,14 +76,6 @@ jobs:
           mkdir -p upstream/src-tauri/resources
           cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-brasil-fase1 --output upstream/src-tauri/resources/wfe-brasil-2026-fase1.ofm
           cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/wfe-brasil-2026-fase1.ofm
-
-      - name: Install frontend dependencies
-        working-directory: upstream
-        run: npm ci
-
-      - name: Frontend QA (TypeScript + Vite)
-        working-directory: upstream
-        run: npm run build
 
       - name: Generate WFE app icons
         working-directory: upstream
