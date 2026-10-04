@@ -1,4 +1,4 @@
-name: Build CM Brasil OFM
+name: Build WFE Brasil OFM
 
 on:
   workflow_dispatch:
@@ -29,18 +29,18 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Validate package with official ofm-cli
-        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate cm-brasil-fase1
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate wfe-brasil-fase1
 
       - name: Pack with official ofm-cli
-        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack cm-brasil-fase1 --output CM_BRASIL_2026_FASE1_CORRIGIDO.ofm
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-brasil-fase1 --output WFE_BRASIL_2026_FASE1.ofm
 
       - name: Verify packed OFM
-        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info CM_BRASIL_2026_FASE1_CORRIGIDO.ofm
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info WFE_BRASIL_2026_FASE1.ofm
 
-      - name: Upload corrected OFM
+      - name: Upload WFE OFM
         uses: actions/upload-artifact@v4
         with:
-          name: CM-Brasil-2026-Fase1-Corrigido
-          path: CM_BRASIL_2026_FASE1_CORRIGIDO.ofm
+          name: WFE-Brasil-2026-Fase1
+          path: WFE_BRASIL_2026_FASE1.ofm
           if-no-files-found: error
           retention-days: 14
