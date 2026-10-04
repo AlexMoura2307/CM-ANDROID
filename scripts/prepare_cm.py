@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import re
+import shutil
 
 root = Path("upstream")
 
@@ -1610,6 +1611,562 @@ match_panels = match_panels.replace(
 match_panels_path.write_text(match_panels, encoding="utf-8")
 
 print("CM mobile: partida ao vivo, intervalo, estatisticas e escalacoes responsivas aplicadas")
+
+
+# ---------------------------------------------------------------------------
+# WFE Plantel 2.0: Principal | Reservas | Base + escalacao rapida + recrutamento.
+# Este bloco roda por ultimo para transformar as telas ja compactadas acima.
+
+# Overrides pequenos, mantidos no repositorio WFE para evitar duplicar componentes grandes aqui.
+override_pairs = [
+    (
+        Path("overrides/src/components/squad/SquadTab.tsx"),
+        root / "src" / "components" / "squad" / "SquadTab.tsx",
+    ),
+    (
+        Path("overrides/src/components/transfers/WFEYouthRecruitmentPanel.tsx"),
+        root / "src" / "components" / "transfers" / "WFEYouthRecruitmentPanel.tsx",
+    ),
+    (
+        Path("overrides/src/lib/playerSquad.ts"),
+        root / "src" / "lib" / "playerSquad.ts",
+    ),
+]
+for override_src, override_dst in override_pairs:
+    if not override_src.exists():
+        raise RuntimeError(f"WFE override ausente: {override_src}")
+    override_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(override_src, override_dst)
+
+# Backend: Reserva vira um estado real do jogador, nao um filtro visual.
+player_domain_path = root / "src-tauri" / "crates" / "domain" / "src" / "player.rs"
+player_domain = player_domain_path.read_text(encoding="utf-8")
+player_domain = player_domain.replace(
+    """pub enum SquadRole {
+    #[default]
+    Senior,
+    Youth,
+}""",
+    """pub enum SquadRole {
+    #[default]
+    Senior,
+    Reserve,
+    Youth,
+}""",
+    1,
+)
+if "Reserve," not in player_domain:
+    raise RuntimeError("WFE Plantel: SquadRole::Reserve nao aplicado")
+player_domain_path.write_text(player_domain, encoding="utf-8")
+
+squad_rs_path = root / "src-tauri" / "src" / "commands" / "squad.rs"
+squad_rs = squad_rs_path.read_text(encoding="utf-8")
+squad_rs = squad_rs.replace(
+    '''        "Senior" => Some(domain::player::SquadRole::Senior),
+        "Youth" => Some(domain::player::SquadRole::Youth),''',
+    '''        "Senior" => Some(domain::player::SquadRole::Senior),
+        "Reserve" => Some(domain::player::SquadRole::Reserve),
+        "Youth" => Some(domain::player::SquadRole::Youth),''',
+    1,
+)
+squad_rs = squad_rs.replace(
+    '''        if matches!(target_role, domain::player::SquadRole::Youth) {
+            user_team_mut(game)?
+                .starting_xi_ids
+                .retain(|id| id != player_id);
+        }''',
+    '''        if !matches!(target_role, domain::player::SquadRole::Senior) {
+            user_team_mut(game)?
+                .starting_xi_ids
+                .retain(|id| id != player_id);
+        }''',
+    1,
+)
+if '"Reserve" => Some(domain::player::SquadRole::Reserve)' not in squad_rs:
+    raise RuntimeError("WFE Plantel: parser Reserve nao aplicado")
+squad_rs_path.write_text(squad_rs, encoding="utf-8")
+
+player_repo_path = root / "src-tauri" / "crates" / "db" / "src" / "repositories" / "player_repo.rs"
+player_repo = player_repo_path.read_text(encoding="utf-8")
+player_repo = player_repo.replace(
+    '''    match s {
+        "Youth" => SquadRole::Youth,
+        _ => SquadRole::Senior,
+    }''',
+    '''    match s {
+        "Youth" => SquadRole::Youth,
+        "Reserve" => SquadRole::Reserve,
+        _ => SquadRole::Senior,
+    }''',
+    1,
+)
+if '"Reserve" => SquadRole::Reserve' not in player_repo:
+    raise RuntimeError("WFE Plantel: persistencia Reserve nao aplicada")
+player_repo_path.write_text(player_repo, encoding="utf-8")
+
+types_path = root / "src" / "store" / "types.ts"
+types_src = types_path.read_text(encoding="utf-8")
+types_src = types_src.replace(
+    'export type PlayerSquadRole = "Senior" | "Youth";',
+    'export type PlayerSquadRole = "Senior" | "Reserve" | "Youth";',
+    1,
+)
+if '"Reserve"' not in types_src:
+    raise RuntimeError("WFE Plantel: tipo frontend Reserve nao aplicado")
+types_path.write_text(types_src, encoding="utf-8")
+
+# Elenco: uma unica tela com a categoria escolhida e escalação por posicao.
+squad_view_path = root / "src" / "components" / "squad" / "SquadRosterView.tsx"
+squad_view = squad_view_path.read_text(encoding="utf-8")
+squad_view = squad_view.replace(
+    'import { canDelegateToYouthAcademy, isSeniorSquadPlayer } from "../../lib/playerSquad";',
+    'import { canDelegateToYouthAcademy, getPlayerSquadRole } from "../../lib/playerSquad";',
+    1,
+)
+if 'import type { PlayerSquadRole } from "../../store/types";' not in squad_view:
+    squad_view = squad_view.replace(
+        'import type {\n  GameStateData,',
+        'import type { PlayerSquadRole } from "../../store/types";\nimport type {\n  GameStateData,',
+        1,
+    )
+squad_view = squad_view.replace(
+    '  onSortStateChange?: (sortState: SquadListSortState) => void;\n}',
+    '  onSortStateChange?: (sortState: SquadListSortState) => void;\n  squadView?: PlayerSquadRole;\n}',
+    1,
+)
+squad_view = squad_view.replace(
+    '  onSortStateChange,\n}: SquadRosterViewProps) {',
+    '  onSortStateChange,\n  squadView = "Senior",\n}: SquadRosterViewProps) {',
+    1,
+)
+squad_view = squad_view.replace(
+    '''  const roster = players
+    .filter((player) => isSeniorSquadPlayer(player))''',
+    '''  const roster = players
+    .filter((player) => getPlayerSquadRole(player) === squadView)''',
+    1,
+)
+squad_view = squad_view.replace(
+    '''  const startingXiIds = useMemo(
+    () => buildStartingXIIds(available, team.starting_xi_ids || [], formation),
+    [available, team.starting_xi_ids, formation],
+  );''',
+    '''  const startingXiIds = useMemo(
+    () =>
+      squadView === "Senior"
+        ? buildStartingXIIds(available, team.starting_xi_ids || [], formation)
+        : [],
+    [available, team.starting_xi_ids, formation, squadView],
+  );''',
+    1,
+)
+squad_view = squad_view.replace(
+    '  const [openPositionsPlayerId, setOpenPositionsPlayerId] = useState<string | null>(null);',
+    '  const [openPositionsPlayerId, setOpenPositionsPlayerId] = useState<string | null>(null);\n  const [lineupTargetPlayerId, setLineupTargetPlayerId] = useState<string | null>(null);',
+    1,
+)
+
+assign_anchor = '''  const renderPreferredPositionMeta = (player: PlayerData) => {'''
+assign_code = '''  const assignPlayerToSlot = async (playerId: string, slotIndex: number): Promise<void> => {
+    if (squadView !== "Senior") return;
+
+    const nextXiIds = buildStartingXIIds(available, startingXiIds, formation);
+    if (slotIndex < 0 || slotIndex >= nextXiIds.length) return;
+
+    const currentIndex = nextXiIds.indexOf(playerId);
+    const displacedPlayerId = nextXiIds[slotIndex];
+
+    if (currentIndex >= 0 && currentIndex !== slotIndex) {
+      nextXiIds[currentIndex] = displacedPlayerId;
+    }
+    nextXiIds[slotIndex] = playerId;
+
+    const uniqueIds = nextXiIds.filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index);
+    if (uniqueIds.length !== nextXiIds.length) return;
+
+    try {
+      await persistStartingXi(uniqueIds);
+      setLineupTargetPlayerId(null);
+    } catch (error) {
+      setContractActionError(String(error));
+    }
+  };
+
+'''
+if assign_anchor not in squad_view:
+    raise RuntimeError("WFE Plantel: anchor do seletor de posicao nao encontrado")
+squad_view = squad_view.replace(assign_anchor, assign_code + assign_anchor, 1)
+
+old_lineup_action = '''                  inXI
+                    ? {
+                        label: t("squad.sendToBench"),
+                        icon: <RotateCcw className="w-4 h-4" />,
+                        disabled:
+                          available.filter((candidate) => !xiIds.has(candidate.id)).length === 0,
+                        onClick: () => {
+                          void updateSquadPlanning(player.id, "demote");
+                        },
+                      }
+                    : {
+                        label: t("squad.makeStarter"),
+                        icon: <Users className="w-4 h-4" />,
+                        disabled: Boolean(player.injury),
+                        onClick: () => {
+                          void updateSquadPlanning(player.id, "promote");
+                        },
+                      },
+                  buildDividerMenuItem(),'''
+new_lineup_action = '''                  ...(squadView === "Senior"
+                    ? [
+                        {
+                          label: "Escalar / escolher posição",
+                          icon: <Users className="w-4 h-4" />,
+                          disabled: Boolean(player.injury),
+                          onClick: () => setLineupTargetPlayerId(player.id),
+                        },
+                        ...(inXI
+                          ? [
+                              {
+                                label: "Banco",
+                                icon: <RotateCcw className="w-4 h-4" />,
+                                disabled:
+                                  available.filter((candidate) => !xiIds.has(candidate.id)).length === 0,
+                                onClick: () => {
+                                  void updateSquadPlanning(player.id, "demote");
+                                },
+                              },
+                            ]
+                          : []),
+                      ]
+                    : []),
+                  ...(squadView === "Senior"
+                    ? [
+                        {
+                          label: "Mover para Reservas",
+                          icon: <Users className="w-4 h-4" />,
+                          onClick: async () => {
+                            const updated = await setPlayerSquadRole(player.id, "Reserve");
+                            onMutationComplete?.(updated);
+                          },
+                        },
+                        ...(canDelegateToYouthAcademy(player)
+                          ? [
+                              {
+                                label: "Mover para Base",
+                                icon: <Users className="w-4 h-4" />,
+                                onClick: async () => {
+                                  const updated = await setPlayerSquadRole(player.id, "Youth");
+                                  onMutationComplete?.(updated);
+                                },
+                              },
+                            ]
+                          : []),
+                      ]
+                    : squadView === "Reserve"
+                      ? [
+                          {
+                            label: "Mover para Principal",
+                            icon: <Users className="w-4 h-4" />,
+                            onClick: async () => {
+                              const updated = await setPlayerSquadRole(player.id, "Senior");
+                              onMutationComplete?.(updated);
+                            },
+                          },
+                          ...(canDelegateToYouthAcademy(player)
+                            ? [
+                                {
+                                  label: "Mover para Base",
+                                  icon: <Users className="w-4 h-4" />,
+                                  onClick: async () => {
+                                    const updated = await setPlayerSquadRole(player.id, "Youth");
+                                    onMutationComplete?.(updated);
+                                  },
+                                },
+                              ]
+                            : []),
+                        ]
+                      : [
+                          {
+                            label: "Promover ao Principal",
+                            icon: <Users className="w-4 h-4" />,
+                            onClick: async () => {
+                              const updated = await setPlayerSquadRole(player.id, "Senior");
+                              onMutationComplete?.(updated);
+                            },
+                          },
+                          {
+                            label: "Mover para Reservas",
+                            icon: <Users className="w-4 h-4" />,
+                            onClick: async () => {
+                              const updated = await setPlayerSquadRole(player.id, "Reserve");
+                              onMutationComplete?.(updated);
+                            },
+                          },
+                        ]),
+                  buildDividerMenuItem(),'''
+if old_lineup_action not in squad_view:
+    raise RuntimeError("WFE Plantel: bloco antigo de escalacao nao encontrado")
+squad_view = squad_view.replace(old_lineup_action, new_lineup_action, 1)
+
+# Remove a antiga acao isolada de mandar para a Base, pois agora o movimento esta agrupado por categoria.
+old_youth_action = '''                  ...(canDelegateToYouthAcademy(player)
+                    ? [
+                        buildDelegateToYouthAcademyMenuItem(t, async () => {
+                          try {
+                            const updated = await setPlayerSquadRole(player.id, "Youth");
+                            onMutationComplete?.(updated);
+                          } catch {
+                            return;
+                          }
+                        }),
+                      ]
+                    : []),'''
+squad_view = squad_view.replace(old_youth_action, "", 1)
+squad_view = squad_view.replace(
+    '  buildDelegateToYouthAcademyMenuItem,\n',
+    '',
+    1,
+)
+
+# Botao visivel Escalar ao lado das acoes, sem alargar demais a linha.
+action_button_anchor = '''                      <td className="py-2.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <button'''
+action_button_repl = '''                      <td className="py-2.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        {squadView === "Senior" ? (
+                          <button
+                            type="button"
+                            disabled={Boolean(player.injury)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLineupTargetPlayerId(player.id);
+                            }}
+                            className="mr-1 rounded-md bg-primary-700 px-1.5 py-1 text-[9px] font-heading font-bold uppercase text-white disabled:opacity-40"
+                          >
+                            Escalar
+                          </button>
+                        ) : null}
+                        <button'''
+if action_button_anchor not in squad_view:
+    raise RuntimeError("WFE Plantel: celula de acoes nao encontrada")
+squad_view = squad_view.replace(action_button_anchor, action_button_repl, 1)
+
+# Modal leve de escolha da posicao da formacao atual.
+modal_anchor = '''      {contractActionError ? ('''
+modal_code = '''      {lineupTargetPlayerId ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center"
+          onClick={() => setLineupTargetPlayerId(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-navy-600 dark:bg-navy-800"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p className="font-heading text-sm font-bold uppercase text-gray-800 dark:text-gray-100">
+                  Escalar jogador
+                </p>
+                <p className="text-xs text-gray-400">
+                  Formação {formation} · escolha a posição
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLineupTargetPlayerId(null)}
+                className="rounded-lg px-2 py-1 text-xs font-bold text-gray-400"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {pitchSlotRows.flatMap((row) => row.slots).map((slot) => (
+                <button
+                  key={slot.index}
+                  type="button"
+                  onClick={() => void assignPlayerToSlot(lineupTargetPlayerId, slot.index)}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-left transition-colors hover:border-primary-500 dark:border-navy-600"
+                >
+                  <span className="block text-xs font-heading font-bold uppercase text-primary-500">
+                    {translatePositionAbbreviation(t, slot.position)}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] text-gray-400">
+                    {slot.player ? "Substitui " + slot.player.match_name : "Posição livre"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+'''
+if modal_anchor not in squad_view:
+    raise RuntimeError("WFE Plantel: anchor do modal de escalacao nao encontrado")
+squad_view = squad_view.replace(modal_anchor, modal_code + modal_anchor, 1)
+squad_view_path.write_text(squad_view, encoding="utf-8")
+
+# Menu: Base deixa de ser um item separado; ela mora dentro de Elenco.
+sidebar_path = root / "src" / "components" / "dashboard" / "DashboardSidebar.tsx"
+sidebar_src = sidebar_path.read_text(encoding="utf-8")
+youth_menu = '''    {
+      icon: <GraduationCap />,
+      label: t("dashboard.youthAcademy"),
+      tab: "Youth",
+    },
+'''
+sidebar_src = sidebar_src.replace(youth_menu, "", 1)
+sidebar_src = sidebar_src.replace('  GraduationCap,\n', '', 1)
+sidebar_path.write_text(sidebar_src, encoding="utf-8")
+
+# Rotas antigas para Youth continuam compativeis, mas abrem Elenco diretamente na aba Base.
+tab_content_path = root / "src" / "components" / "dashboard" / "DashboardTabContent.tsx"
+tab_content = tab_content_path.read_text(encoding="utf-8")
+tab_content = tab_content.replace(
+    'const YouthAcademyTab = lazy(() => import("../youthAcademy/YouthAcademyTab"));\n',
+    '',
+    1,
+)
+old_youth_route = '''  } else if (activeTab === "Youth") {
+    content = (
+      <YouthAcademyTab
+        gameState={gameState}
+        onGameUpdate={onGameUpdate}
+        onSelectPlayer={onSelectPlayer}
+      />
+    );
+'''
+new_youth_route = '''  } else if (activeTab === "Youth") {
+    content = (
+      <SquadTab
+        gameState={gameState}
+        managerId={managerId}
+        onSelectPlayer={onSelectPlayer}
+        onGameUpdate={onGameUpdate}
+        sortState={squadListSortState}
+        onSortStateChange={onSquadListSortChange}
+        initialView="Youth"
+      />
+    );
+'''
+if old_youth_route not in tab_content:
+    raise RuntimeError("WFE Plantel: rota Youth nao encontrada")
+tab_content = tab_content.replace(old_youth_route, new_youth_route, 1)
+tab_content_path.write_text(tab_content, encoding="utf-8")
+
+# Recrutamento de Base passa a viver em Transferencias, nao na tela Base nem no Scouting geral.
+transfer_model_path = root / "src" / "components" / "transfers" / "TransfersTab.model.ts"
+transfer_model = transfer_model_path.read_text(encoding="utf-8")
+transfer_model = transfer_model.replace(
+    'export type TransferTabView = "my_list" | "players" | "offers";',
+    'export type TransferTabView = "my_list" | "players" | "offers" | "youth";',
+    1,
+)
+transfer_model = transfer_model.replace(
+    '''    case "players":
+      return collections.availablePlayers;
+    default:
+      return collections.playersWithOffers;''',
+    '''    case "players":
+      return collections.availablePlayers;
+    case "youth":
+      return [];
+    default:
+      return collections.playersWithOffers;''',
+    1,
+)
+transfer_model_path.write_text(transfer_model, encoding="utf-8")
+
+transfers_path = root / "src" / "components" / "transfers" / "TransfersTab.tsx"
+transfers_src = transfers_path.read_text(encoding="utf-8")
+if 'import WFEYouthRecruitmentPanel from "./WFEYouthRecruitmentPanel";' not in transfers_src:
+    transfers_src = transfers_src.replace(
+        'import { useTransferBidFlow } from "./useTransferBidFlow";',
+        'import { useTransferBidFlow } from "./useTransferBidFlow";\nimport WFEYouthRecruitmentPanel from "./WFEYouthRecruitmentPanel";',
+        1,
+    )
+tabs_anchor = '''    {
+      id: "offers",
+      label: t("transfers.offers"),
+      icon: <Handshake className="w-4 h-4" />,
+      count: playersWithOffers.length,
+    },
+  ];'''
+tabs_repl = '''    {
+      id: "offers",
+      label: t("transfers.offers"),
+      icon: <Handshake className="w-4 h-4" />,
+      count: playersWithOffers.length,
+    },
+    {
+      id: "youth",
+      label: "Recrutamento da Base",
+      icon: <UserPlus className="w-4 h-4" />,
+      count: gameState.youth_scouting_assignments?.length ?? 0,
+    },
+  ];'''
+if tabs_anchor not in transfers_src:
+    raise RuntimeError("WFE Transferencias: tabs anchor nao encontrado")
+transfers_src = transfers_src.replace(tabs_anchor, tabs_repl, 1)
+
+panel_anchor = '''      {/* Filters */}'''
+if panel_anchor not in transfers_src:
+    raise RuntimeError("WFE Transferencias: filtro anchor nao encontrado")
+transfers_src = transfers_src.replace(
+    panel_anchor,
+    '''      {view === "youth" ? (
+        <WFEYouthRecruitmentPanel gameState={gameState} onGameUpdate={onGameUpdate} />
+      ) : null}
+
+      {/* Filters */}''',
+    1,
+)
+
+filter_start = transfers_src.find('      {/* Filters */}')
+filter_end = transfers_src.find('      {scoutError', filter_start)
+if filter_start < 0 or filter_end < 0:
+    raise RuntimeError("WFE Transferencias: bloco de filtros nao localizado")
+filters_block = transfers_src[filter_start:filter_end]
+transfers_src = (
+    transfers_src[:filter_start]
+    + '      {view !== "youth" ? (\\n        <>\\n'
+    + filters_block
+    + '        </>\\n      ) : null}\\n\\n'
+    + transfers_src[filter_end:]
+)
+transfers_path.write_text(transfers_src, encoding="utf-8")
+
+scouting_path = root / "src" / "components" / "scouting" / "ScoutingTab.tsx"
+scouting_src = scouting_path.read_text(encoding="utf-8")
+youth_card_start = scouting_src.find('      {scouts.length > 0 && (\\n        <ScoutingYouthRecruitmentCard')
+if youth_card_start >= 0:
+    youth_card_end = scouting_src.find('      )}', youth_card_start)
+    if youth_card_end >= 0:
+        youth_card_end += len('      )}')
+        old_block = scouting_src[youth_card_start:youth_card_end]
+        scouting_src = scouting_src[:youth_card_start] + '      {false && (<>\\n' + old_block + '\\n      </>)}' + scouting_src[youth_card_end:]
+scouting_path.write_text(scouting_src, encoding="utf-8")
+
+# A base Brasil embutida deve vir selecionada por padrao ao criar carreira.
+main_menu_path = root / "src" / "pages" / "MainMenu.tsx"
+main_menu = main_menu_path.read_text(encoding="utf-8")
+main_menu = main_menu.replace(
+    '''      setInstalledPackages(pkgs ?? []);''',
+    '''      const normalizedPackages = pkgs ?? [];
+      setInstalledPackages(normalizedPackages);
+      setActivePackageIds((current) =>
+        current.length > 0
+          ? current
+          : normalizedPackages
+              .filter((pkg) => pkg.id === "wfe-brasil-2026-fase1")
+              .map((pkg) => pkg.id),
+      );''',
+    1,
+)
+main_menu_path.write_text(main_menu, encoding="utf-8")
+
+print("WFE Plantel 2.0 aplicado: Principal, Reservas, Base, escalacao e recrutamento")
+
 
 # Validacao forte do pacote WFE
 # Garante que o build realmente contem os ajustes solicitados. Se algum replace falhar,
