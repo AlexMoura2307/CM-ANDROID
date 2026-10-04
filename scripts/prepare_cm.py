@@ -1015,6 +1015,22 @@ squad = squad.replace(
 squad_path.write_text(squad, encoding="utf-8")
 
 
+
+# Elenco: remove coluna Caracteristicas para reduzir a largura da tabela no mobile.
+traits_header = '''                <th className="py-2.5 px-4 font-heading font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  {t("squad.traits")}
+                </th>
+'''
+squad = squad.replace(traits_header, "", 1)
+traits_cell = '''                      {/* Traits — all of them, wraps as needed */}
+                      <td className="py-2.5 px-4">
+                        <TraitList traits={player.traits || []} size="xs" />
+                      </td>
+'''
+squad = squad.replace(traits_cell, "", 1)
+squad_path.write_text(squad, encoding="utf-8")
+print("CM mobile: coluna Caracteristicas removida do Elenco")
+
 # Taticas mobile CM: compacta cabecalho, campo antes da lista e remove filtros visuais.
 # Mantem toda a logica/engine existente; os ajustes abaixo sao apenas de apresentacao mobile.
 
@@ -1037,6 +1053,44 @@ header = header.replace(
     1,
 )
 header_path.write_text(header, encoding="utf-8")
+
+
+# Cabecalho mobile: remove nome da aba e usa data em duas linhas.
+dashboard_path = root / "src" / "pages" / "Dashboard.tsx"
+dashboard = dashboard_path.read_text(encoding="utf-8")
+dashboard = dashboard.replace(
+    'const currentDate = formatDateFull(gameState.clock.current_date, settings.language);',
+    '''const [cmYear, cmMonth, cmDay] = gameState.clock.current_date.slice(0, 10).split("-");
+  const cmDateObject = new Date(Number(cmYear), Number(cmMonth) - 1, Number(cmDay), 12, 0, 0);
+  const cmWeekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long" }).format(cmDateObject);
+  const cmMonths = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const currentDate = cmWeekday + "|" + cmDay + "/" + cmMonths[Number(cmMonth) - 1] + "/" + cmYear;''',
+    1,
+)
+dashboard_path.write_text(dashboard, encoding="utf-8")
+
+header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
+header = header_path.read_text(encoding="utf-8")
+header = header.replace(
+    'className="text-xl font-heading font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100"',
+    'className="hidden text-xl font-heading font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 lg:block"',
+    1,
+)
+old_date = '''          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <CalendarIcon className="h-3.5 w-3.5" />
+            <span className="font-medium">{currentDate}</span>
+          </p>
+'''
+new_date = '''          <p className="mt-0.5 flex flex-col items-start text-xs leading-tight text-gray-500 dark:text-gray-400">
+            <span className="font-medium">{currentDate.split("|")[0]}</span>
+            <span className="mt-0.5 font-semibold text-gray-700 dark:text-gray-300">
+              {currentDate.split("|")[1]}
+            </span>
+          </p>
+'''
+header = header.replace(old_date, new_date, 1)
+header_path.write_text(header, encoding="utf-8")
+print("CM mobile: cabecalho sem nome da aba e data em duas linhas")
 
 # Card superior de taticas: mantem a tatica ativa e as acoes, mas remove excesso visual.
 command_path = root / "src" / "components" / "tactics" / "TacticsCommandBar.tsx"
@@ -1069,6 +1123,29 @@ compact_summary = '''              <p className="mt-1 truncate text-base font-he
               </p>
 '''
 command = command.replace(description, compact_summary, 1)
+
+# Taticas: seletor compacto com todas as formacoes, sem reabrir o card grande.
+formation_anchor = '''              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                {formation} · {t(\`common.playStyles.\${activePlayStyle}\`, activePlayStyle)}
+              </p>
+'''
+formation_controls = formation_anchor + '''              <div className="-mx-1 mt-2 flex gap-1 overflow-x-auto px-1 pb-1">
+                {FORMATIONS.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => onFormationChange(f)}
+                    className={formation === f
+                      ? "shrink-0 rounded-md bg-primary-500 px-2.5 py-1.5 text-xs font-heading font-bold text-white"
+                      : "shrink-0 rounded-md bg-gray-100 px-2.5 py-1.5 text-xs font-heading font-bold text-gray-600 dark:bg-navy-700 dark:text-gray-300"}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+'''
+command = command.replace(formation_anchor, formation_controls, 1)
+
 command = command.replace(
     'className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)_minmax(0,1.2fr)]"',
     'className="hidden grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)_minmax(0,1.2fr)]"',
@@ -1428,21 +1505,20 @@ checks = [
         'flex flex-col gap-4 sm:flex-row sm:gap-6',
         "escalacoes responsivas",
     ),
+    (
+        root / "src" / "components" / "dashboard" / "DashboardHeader.tsx",
+        'currentDate.split("|")[1]',
+        "data mobile em duas linhas",
+    ),
+    (
+        root / "src" / "components" / "tactics" / "TacticsCommandBar.tsx",
+        'FORMATIONS.map((f)',
+        "todas as formacoes disponiveis na Tatica",
+    ),
 ]
 for path, needle, label in checks:
     generated = path.read_text(encoding="utf-8")
     if needle not in generated:
         raise RuntimeError(f"CM Teste 3: ajuste ausente no build: {label}")
-
-# Marcador temporario para o usuario identificar sem duvida que abriu o APK novo.
-header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
-header = header_path.read_text(encoding="utf-8")
-if "CM TESTE 3" not in header:
-    header = header.replace(
-        '{activeTabLabel}',
-        '{activeTabLabel}<span className="ml-2 rounded bg-primary-500/15 px-1.5 py-0.5 text-[9px] text-primary-400">CM TESTE 3</span>',
-        1,
-    )
-header_path.write_text(header, encoding="utf-8")
 
 print("CM Teste 3 validado: ajustes visuais confirmados antes do build")
