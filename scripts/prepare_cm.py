@@ -1192,8 +1192,62 @@ squad = squad.replace('className="py-1 px-2 text-xs text-gray-600 dark:text-gray
 squad = squad.replace('className="h-7 w-7 shrink-0', 'className="h-6 w-6 shrink-0', 1)
 squad = squad.replace('font-semibold text-xs text-gray-900', 'font-semibold text-[11px] text-gray-900')
 
+# Mobile: reserva largura real para o nome. Em table-layout: fixed, as larguras
+# precisam vir do colgroup/primeira linha; larguras apenas nos <td> do corpo
+# eram ignoradas e deixavam as cinco colunas praticamente iguais.
+table_marker = '<table className="w-full table-fixed text-left text-[11px] border-collapse">'
+table_with_columns = '''<table className="w-full table-fixed text-left text-[11px] border-collapse">
+            <colgroup>
+              <col className="w-6" />
+              <col />
+              <col className="w-12" />
+              <col className="w-9" />
+              <col className="w-[4.75rem]" />
+            </colgroup>'''
+if table_marker not in squad:
+    raise RuntimeError("WFE Elenco: tabela compacta nao encontrada para definir larguras")
+squad = squad.replace(table_marker, table_with_columns, 1)
+
+# O bloco interno do nome ocupa todo o espaco restante da coluna e so aplica
+# reticencias quando o nome realmente ultrapassa esse espaco.
+squad = squad.replace(
+    'className="min-w-0 flex items-center gap-1.5"',
+    'className="min-w-0 flex flex-1 items-center gap-1"',
+    1,
+)
+squad = squad.replace(
+    'className="font-semibold text-[11px] text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate"',
+    'className="min-w-0 flex-1 truncate font-semibold text-[11px] text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors"',
+    1,
+)
+squad = squad.replace(
+    'className="text-sm leading-none shrink-0"',
+    'className="shrink-0 text-xs leading-none"',
+    1,
+)
+squad = squad.replace(
+    'className="py-1 px-2 font-heading font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-right"',
+    'className="w-[4.75rem] py-1 px-1 font-heading font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-right"',
+    1,
+)
+
+if '<colgroup>' not in squad or 'flex flex-1 items-center gap-1' not in squad:
+    raise RuntimeError("WFE Elenco: ajuste de largura do nome nao aplicado")
+
 squad_path.write_text(squad, encoding="utf-8")
-print("WFE mobile: Elenco em uma linha, Caracteristicas removida e posicoes secundarias sob toque")
+
+# Cabecalhos compactos: o padding antigo consumia largura demais nas colunas
+# POS./IDADE e acabava roubando espaco visual da coluna NOME no celular.
+sort_header_path = root / "src" / "components" / "squad" / "SquadSortHeader.tsx"
+sort_header = sort_header_path.read_text(encoding="utf-8")
+old_sort_header_class = 'className={`flex w-full items-center gap-1 py-2.5 px-4 font-heading font-bold uppercase tracking-wider cursor-pointer select-none transition-colors hover:text-primary-400 dark:hover:text-primary-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-600 dark:focus-visible:ring-primary-400 ${active ? "text-primary-500 dark:text-primary-400" : "text-gray-500 dark:text-gray-400"}`}'
+new_sort_header_class = 'className={`flex w-full items-center gap-0.5 px-1 py-2 text-[10px] font-heading font-bold uppercase tracking-wide cursor-pointer select-none transition-colors hover:text-primary-400 dark:hover:text-primary-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-600 dark:focus-visible:ring-primary-400 sm:text-xs ${active ? "text-primary-500 dark:text-primary-400" : "text-gray-500 dark:text-gray-400"}`}'
+if old_sort_header_class not in sort_header:
+    raise RuntimeError("WFE Elenco: classe do cabecalho ordenavel nao encontrada")
+sort_header = sort_header.replace(old_sort_header_class, new_sort_header_class, 1)
+sort_header_path.write_text(sort_header, encoding="utf-8")
+
+print("WFE mobile: Elenco em uma linha, nome ampliado, Caracteristicas removida e posicoes secundarias sob toque")
 
 # Taticas mobile CM: compacta cabecalho, campo antes da lista e remove filtros visuais.
 # Mantem toda a logica/engine existente; os ajustes abaixo sao apenas de apresentacao mobile.
@@ -1935,7 +1989,7 @@ squad_view = squad_view.replace(
 # Botao visivel Escalar ao lado das acoes, sem alargar demais a linha.
 action_button_anchor = '''                      <td className="py-1 px-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <button'''
-action_button_repl = '''                      <td className="py-2.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+action_button_repl = '''                      <td className="w-[4.75rem] py-0.5 px-1 text-right" onClick={(e) => e.stopPropagation()}>
                         {squadView === "Senior" ? (
                           <button
                             type="button"
@@ -1944,7 +1998,7 @@ action_button_repl = '''                      <td className="py-2.5 px-4 text-ri
                               e.stopPropagation();
                               setLineupTargetPlayerId(player.id);
                             }}
-                            className="mr-1 rounded-md bg-primary-700 px-1.5 py-1 text-[9px] font-heading font-bold uppercase text-white disabled:opacity-40"
+                            className="mr-0.5 rounded-md bg-primary-700 px-1 py-0.5 text-[8px] font-heading font-bold uppercase text-white disabled:opacity-40"
                           >
                             Escalar
                           </button>
