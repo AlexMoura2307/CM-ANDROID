@@ -25,8 +25,8 @@ lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", enco
 # Tauri / Android - versão de teste instalada ao lado do CM atual
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "CM Teste 2"
-conf["identifier"] = "com.cm.footballmanager.test2"
+conf["productName"] = "CM Teste 3"
+conf["identifier"] = "com.cm.footballmanager.test3"
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources["resources/cm-brasil-2026-fase1.ofm"] = "packages/cm-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -1181,3 +1181,67 @@ pitch = pitch.replace('flex w-[4.5rem]', 'flex w-[3.75rem]')
 pitch_path.write_text(pitch, encoding="utf-8")
 
 print("CM mobile: ajustes de Taticas e MENU aplicados")
+
+
+# Validacao forte do pacote CM Teste 3
+# Garante que o build realmente contem os ajustes solicitados. Se algum replace falhar,
+# a compilacao para aqui em vez de gerar um APK aparentemente "novo" sem as mudancas.
+checks = [
+    (
+        root / "src" / "pages" / "Dashboard.tsx",
+        'top-16',
+        "MENU reposicionado",
+    ),
+    (
+        root / "src" / "components" / "dashboard" / "DashboardHeader.tsx",
+        'pl-16',
+        "cabecalho mobile corrigido",
+    ),
+    (
+        root / "src" / "components" / "tactics" / "TacticsCommandBar.tsx",
+        'className="hidden grid gap-3',
+        "card de configuracoes de taticas compactado",
+    ),
+    (
+        root / "src" / "components" / "tactics" / "TacticsTab.tsx",
+        'xl:grid-cols-[1fr_260px_270px]',
+        "campo antes da lista de jogadores",
+    ),
+    (
+        root / "src" / "components" / "tactics" / "TacticsPlayerList.tsx",
+        'rounded-md px-2 py-0.5',
+        "linhas de titulares/banco compactas",
+    ),
+    (
+        root / "src" / "components" / "tactics" / "TacticsPlayerList.tsx",
+        '<div className="hidden">\n      <TacticsFilters',
+        "filtro de taticas removido visualmente",
+    ),
+    (
+        root / "src" / "components" / "tactics" / "TacticsPitch.tsx",
+        'min-h-[26rem]',
+        "campo de taticas compacto",
+    ),
+    (
+        root / "src" / "components" / "squad" / "SquadRosterView.tsx",
+        'table-auto text-left text-xs',
+        "elenco compacto",
+    ),
+]
+for path, needle, label in checks:
+    generated = path.read_text(encoding="utf-8")
+    if needle not in generated:
+        raise RuntimeError(f"CM Teste 3: ajuste ausente no build: {label}")
+
+# Marcador temporario para o usuario identificar sem duvida que abriu o APK novo.
+header_path = root / "src" / "components" / "dashboard" / "DashboardHeader.tsx"
+header = header_path.read_text(encoding="utf-8")
+if "CM TESTE 3" not in header:
+    header = header.replace(
+        '{activeTabLabel}',
+        '{activeTabLabel}<span className="ml-2 rounded bg-primary-500/15 px-1.5 py-0.5 text-[9px] text-primary-400">CM TESTE 3</span>',
+        1,
+    )
+header_path.write_text(header, encoding="utf-8")
+
+print("CM Teste 3 validado: ajustes visuais confirmados antes do build")
