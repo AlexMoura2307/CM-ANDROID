@@ -1,0 +1,85 @@
+name: Build CM South America OFM
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-south-america-ofm.yml"
+      - "scripts/generate_south_america.py"
+
+jobs:
+  build-south-america:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout CM build repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Generate South America country batches
+        run: python3 scripts/generate_south_america.py
+
+      - name: Inspect consolidated QA
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("wfe-south-america/qa/summary.json")
+          if not p.exists():
+              raise SystemExit("QA summary not found")
+          qa = json.loads(p.read_text(encoding="utf-8"))
+
+          required = {"AR","BO","BR","CL","CO","EC","PY","PE","UY","VE"}
+          got = set(qa.get("countries", {}))
+          missing = required - got
+          if missing:
+              raise SystemExit(f"Missing South America countries: {sorted(missing)}")
+          if qa.get("clubsTotal", 0) < 170:
+              raise SystemExit(f"Too few clubs: {qa.get('clubsTotal')}")
+          if qa.get("playersTotal", 0) < 3500:
+              raise SystemExit(f"Too few players: {qa.get('playersTotal')}")
+          if qa.get("photoCoverage", 0) < 0.85:
+              raise SystemExit(f"Photo coverage too low: {qa.get('photoCoverage')}")
+          if qa.get("logoCoverage", 0) < 0.90:
+              raise SystemExit(f"Logo coverage too low: {qa.get('logoCoverage')}")
+
+          print(json.dumps(qa, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate package with official ofm-cli
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate wfe-south-america
+
+      - name: Pack South America database
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-south-america --output CM_SOUTH_AMERICA_2026.ofm
+
+      - name: Verify packed OFM
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info CM_SOUTH_AMERICA_2026.ofm
+
+      - name: Upload QA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-South-America-QA
+          path: wfe-south-america/qa/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload South America OFM
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-South-America-2026
+          path: CM_SOUTH_AMERICA_2026.ofm
+          if-no-files-found: error
+          retention-days: 14
