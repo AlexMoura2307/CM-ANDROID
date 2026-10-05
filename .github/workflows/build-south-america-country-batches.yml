@@ -1,5 +1,9 @@
 name: Build CM South America Country Batches
 
+concurrency:
+  group: cm-south-america-country-batches
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
