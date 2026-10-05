@@ -69,6 +69,7 @@ wss.on("connection", (ws) => {
             connectionId,
             managerName: msg.managerName,
             teamId: msg.teamId,
+            startDate: msg.startDate,
           });
           send(ws, ServerMessage.ROOM_CREATED, {
             room: store.publicState(room),
@@ -146,6 +147,7 @@ wss.on("connection", (ws) => {
               if (peer) {
                 send(peer, ServerMessage.DAY_ADVANCED, {
                   dayRevision: result.room.dayRevision,
+                  currentDate: result.room.currentDate,
                   revision: result.room.revision,
                 });
               }
