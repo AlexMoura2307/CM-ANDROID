@@ -1594,6 +1594,13 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "positionCounts": {},
         "rosterWarnings": [],
         "squadSegments": {},
+        "segmentStats": {
+            "seniorMain": {"players": 0, "withPhotos": 0},
+            "topDivisionMain": {"players": 0, "withPhotos": 0},
+            "reserveAffiliate": {"players": 0, "withPhotos": 0},
+            "youthBase": {"players": 0, "withPhotos": 0},
+        },
+        "playableSquadFailures": [],
         "reserveAffiliateClubs": 0,
         "youthAffiliateClubs": 0,
         "reservePlayersImported": 0,
@@ -1757,6 +1764,20 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 ),
             }
 
+            if spec.division == 1 and club_id in competition_source_ids:
+                problems = []
+                if len(raw_players) < 18:
+                    problems.append(f"principal={len(raw_players)}")
+                if not youth_club or len(youth_players) < 5:
+                    problems.append(f"base={len(youth_players)}")
+                if problems:
+                    qa["playableSquadFailures"].append({
+                        "clubId": team["id"],
+                        "clubName": team["name"],
+                        "country": spec.country_code,
+                        "problems": problems,
+                    })
+
             # ESPN entra somente nos clubes participantes da primeira divisao.
             # O cruzamento continua sendo por identidade (DOB+nome ou nome muito
             # forte dentro do mesmo clube), nunca por nome global.
@@ -1829,8 +1850,14 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 if player["id"] not in players_by_id:
                     players_by_id[player["id"]] = player
                     comp_player_count += 1
+                    qa["segmentStats"]["seniorMain"]["players"] += 1
+                    if spec.division == 1 and club_id in competition_source_ids:
+                        qa["segmentStats"]["topDivisionMain"]["players"] += 1
                     if player.get("photo"):
                         comp_photo_count += 1
+                        qa["segmentStats"]["seniorMain"]["withPhotos"] += 1
+                        if spec.division == 1 and club_id in competition_source_ids:
+                            qa["segmentStats"]["topDivisionMain"]["withPhotos"] += 1
                     qa["positionCounts"][player["position"]] = qa["positionCounts"].get(player["position"], 0) + 1
 
             # Reserva/segundo time real entra no elenco senior do clube principal.
@@ -1849,8 +1876,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 players_by_id[player["id"]] = player
                 comp_player_count += 1
                 qa["reservePlayersImported"] += 1
+                qa["segmentStats"]["reserveAffiliate"]["players"] += 1
                 if player.get("photo"):
                     comp_photo_count += 1
+                    qa["segmentStats"]["reserveAffiliate"]["withPhotos"] += 1
                 qa["positionCounts"][player["position"]] = qa["positionCounts"].get(player["position"], 0) + 1
 
             # Base real: nunca colocar jogador acima de 20 anos no plantel de base.
@@ -1874,8 +1903,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 players_by_id[player["id"]] = player
                 comp_player_count += 1
                 qa["youthPlayersImported"] += 1
+                qa["segmentStats"]["youthBase"]["players"] += 1
                 if player.get("photo"):
                     comp_photo_count += 1
+                    qa["segmentStats"]["youthBase"]["withPhotos"] += 1
                 qa["positionCounts"][player["position"]] = qa["positionCounts"].get(player["position"], 0) + 1
 
         competition_defs.append({
@@ -2043,6 +2074,13 @@ def generate(country_filter: set[str] | None = None) -> dict:
     logo_ratio = qa["clubsWithLogos"] / max(1, qa["clubsTotal"])
     qa["photoCoverage"] = round(photo_ratio, 4)
     qa["logoCoverage"] = round(logo_ratio, 4)
+
+    for segment_name, stats in qa["segmentStats"].items():
+        stats["photoCoverage"] = round(
+            stats["withPhotos"] / max(1, stats["players"]),
+            4,
+        )
+
     qa["transfermarktPhotos"] = max(
         0,
         qa["playersWithPhotos"]
@@ -2059,9 +2097,25 @@ def generate(country_filter: set[str] | None = None) -> dict:
         json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    if photo_ratio < 0.85:
+    top_photo = qa["segmentStats"]["topDivisionMain"]["photoCoverage"]
+    qa["photoCoverageGate"] = {
+        "topDivisionMainMinimum": 0.80,
+        "overallRecordedNotFatal": True,
+        "reason": (
+            "Base/reserva de divisões menores nem sempre possui foto pública real; "
+            "o CM não fabrica retratos para satisfazer cobertura."
+        ),
+    }
+
+    if qa["playableSquadFailures"]:
+        sample = qa["playableSquadFailures"][:20]
         raise RuntimeError(
-            f"QA: cobertura de fotos insuficiente: {qa['playersWithPhotos']}/{qa['playersTotal']}"
+            f"QA: elenco principal/base incompleto em clubes jogáveis: {sample}"
+        )
+    if qa["segmentStats"]["topDivisionMain"]["players"] and top_photo < 0.80:
+        raise RuntimeError(
+            "QA: fotos reais insuficientes no elenco principal da primeira divisão: "
+            f"{top_photo:.1%}"
         )
     if logo_ratio < 0.90:
         raise RuntimeError(
