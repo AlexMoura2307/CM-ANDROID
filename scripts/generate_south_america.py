@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime
 from hashlib import sha256
+from io import BytesIO
 from math import log10
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -15,6 +16,11 @@ import shutil
 import time
 import unicodedata
 import urllib.request
+
+try:
+    from PIL import Image
+except ImportError as exc:
+    raise SystemExit("Pillow is required: python -m pip install pillow") from exc
 
 ROOT = Path("wfe-south-america")
 ASSETS_PLAYERS = ROOT / "assets" / "players" / "by-id"
@@ -322,26 +328,36 @@ def image_bytes(url: str) -> bytes | None:
     return None
 
 
-def image_ext(url: str) -> str:
-    path = urlparse(url).path.lower()
-    for ext in (".webp", ".png", ".jpeg", ".jpg"):
-        if path.endswith(ext):
-            return ".jpg" if ext == ".jpeg" else ext
-    return ".jpg"
-
-
-def download_asset(stable_id: str, url: str | None, folder: Path) -> str | None:
+def download_asset(
+    stable_id: str,
+    url: str | None,
+    folder: Path,
+    *,
+    logo: bool = False,
+) -> str | None:
     if not url:
         return None
     data = image_bytes(url)
     if not data:
         return None
-    ext = image_ext(url)
-    dest = folder / f"{stable_id}{ext}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-    return dest.relative_to(ROOT).as_posix()
 
+    dest = folder / f"{stable_id}.webp"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with Image.open(BytesIO(data)) as source:
+            source.thumbnail((192, 192), Image.Resampling.LANCZOS)
+            if logo:
+                image = source.convert("RGBA")
+                image.save(dest, "WEBP", lossless=True, method=6)
+            else:
+                image = source.convert("RGB")
+                image.save(dest, "WEBP", quality=78, method=6)
+    except Exception:
+        return None
+
+    if not dest.exists() or dest.stat().st_size < 300:
+        return None
+    return dest.relative_to(ROOT).as_posix()
 
 def country_code(name: str | None, fallback: str) -> str:
     if not name:
@@ -713,7 +729,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
             roster = api_json(f"/clubs/{club_id}/players")
 
             team_stable_id = f"tm-club-{club_id}"
-            logo_path = download_asset(team_stable_id, profile.get("image"), ASSETS_CLUBS)
+            logo_path = download_asset(team_stable_id, profile.get("image"), ASSETS_CLUBS, logo=True)
             if logo_path:
                 comp_logo_count += 1
 
