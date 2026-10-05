@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "scripts/prepare_cm.py"
+      - "scripts/prepare_cm_south_america.py"
       - ".github/workflows/cm-runtime-patch-qa.yml"
 
 jobs:
@@ -24,7 +25,11 @@ jobs:
           path: upstream
 
       - name: Apply CM runtime patches
-        run: python3 scripts/prepare_cm.py
+        run: |
+          python3 scripts/prepare_cm.py
+          python3 scripts/prepare_cm_south_america.py
+          mkdir -p upstream/src-tauri/resources
+          : > upstream/src-tauri/resources/cm-south-america-2026.ofm
 
       - name: Verify CM rules
         run: |
@@ -34,13 +39,19 @@ jobs:
           backend = Path("upstream/src-tauri/src/commands/game/mod.rs").read_text()
           roster = Path("upstream/src-tauri/crates/ofm_core/src/roster.rs").read_text()
           generator = Path("upstream/src-tauri/crates/ofm_core/src/generator/mod.rs").read_text()
+          world = Path("upstream/src-tauri/src/commands/world.rs").read_text()
+          import json
+          conf = json.loads(Path("upstream/src-tauri/tauri.conf.json").read_text())
 
           assert "const MANAGER_MINIMUM_AGE = 18;" in frontend
           assert "if age < 18 {" in backend
           assert "pub const YOUTH_ACADEMY_MAX_AGE: i32 = 20;" in roster
           assert "const CM_PACKAGE_YOUTH_TARGET: usize = 18;" in generator
           assert "ensure_cm_package_youth_academy" in generator
-          print("CM runtime rules verified")
+          assert "cm-south-america-2026.ofm" in world
+          assert conf["productName"] == "CM Teste 4"
+          assert conf["identifier"] == "com.cm.clubemanager.test4"
+          print("CM runtime and South America integration rules verified")
           PY
 
       - name: Setup Rust
@@ -48,3 +59,6 @@ jobs:
 
       - name: Compile ofm_core with CM academy patch
         run: cargo check --manifest-path upstream/src-tauri/Cargo.toml -p ofm_core
+
+      - name: Compile CM Tauri integration
+        run: cargo check --manifest-path upstream/src-tauri/Cargo.toml -p openfootmanager
