@@ -1,5 +1,9 @@
 name: Build CM South America OFM
 
+concurrency:
+  group: cm-south-america-data
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
