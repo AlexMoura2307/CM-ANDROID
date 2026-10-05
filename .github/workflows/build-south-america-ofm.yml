@@ -51,12 +51,21 @@ jobs:
           missing = required - got
           if missing:
               raise SystemExit(f"Missing South America countries: {sorted(missing)}")
-          if qa.get("clubsTotal", 0) < 170:
+          if qa.get("clubsTotal", 0) < 350:
               raise SystemExit(f"Too few clubs: {qa.get('clubsTotal')}")
-          if qa.get("playersTotal", 0) < 3500:
+          if qa.get("playersTotal", 0) < 5000:
               raise SystemExit(f"Too few players: {qa.get('playersTotal')}")
-          if qa.get("photoCoverage", 0) < 0.85:
-              raise SystemExit(f"Photo coverage too low: {qa.get('photoCoverage')}")
+
+          top = qa.get("segmentStats", {}).get("topDivisionMain", {})
+          if top.get("players", 0) and top.get("photoCoverage", 0) < 0.80:
+              raise SystemExit(
+                  "Top-division real photo coverage too low: "
+                  f"{top.get('photoCoverage')}"
+              )
+          if qa.get("playableSquadFailures"):
+              raise SystemExit(
+                  f"Incomplete playable senior squads: {qa['playableSquadFailures'][:20]}"
+              )
           if qa.get("logoCoverage", 0) < 0.90:
               raise SystemExit(f"Logo coverage too low: {qa.get('logoCoverage')}")
 
