@@ -767,3 +767,66 @@ test("pending negotiations survive multiplayer server restart", () => {
   assert.equal(sourceState.outgoingOffers[0].amount, 5000000);
   assert.equal(sourceState.outgoingOffers[0].status, "pending");
 });
+
+
+test("scouting knowledge is isolated per human-controlled club", () => {
+  const store = new RoomStore();
+  const { room, member: sp } = store.createRoom({
+    connectionId: "sp",
+    managerName: "SP Manager",
+    teamId: "sao-paulo",
+  });
+  const { member: fla } = store.joinRoom({
+    code: room.code,
+    connectionId: "fla",
+    managerName: "Fla Manager",
+    teamId: "flamengo",
+  });
+
+  store.submitCommand("sp", {
+    clientCommandId: "scout-1",
+    kind: "scout_player",
+    teamId: "sao-paulo",
+    payload: { playerId: "target-9", targetClubId: "palmeiras" },
+  });
+
+  const spState = store.privateState(room, sp.id);
+  const flaState = store.privateState(room, fla.id);
+
+  assert.equal(spState.myClubState.scoutingReports["target-9"].knowledge, 15);
+  assert.equal(flaState.myClubState.scoutingReports["target-9"], undefined);
+});
+
+test("scouting knowledge advances with the shared career day without leaking", () => {
+  const store = new RoomStore();
+  const { room, member: sp } = store.createRoom({
+    connectionId: "sp",
+    managerName: "SP Manager",
+    teamId: "sao-paulo",
+  });
+  const { member: fla } = store.joinRoom({
+    code: room.code,
+    connectionId: "fla",
+    managerName: "Fla Manager",
+    teamId: "flamengo",
+  });
+
+  store.submitCommand("sp", {
+    clientCommandId: "scout-day-1",
+    kind: "scout_player",
+    teamId: "sao-paulo",
+    payload: { playerId: "target-10", targetClubId: "corinthians" },
+  });
+
+  store.setReady("sp", true);
+  store.setReady("fla", true);
+  store.markAdvanceReady("sp", true);
+  store.markAdvanceReady("fla", true);
+
+  const spReport = store.privateState(room, sp.id).myClubState.scoutingReports["target-10"];
+  const flaReport = store.privateState(room, fla.id).myClubState.scoutingReports["target-10"];
+
+  assert.equal(spReport.knowledge, 27);
+  assert.equal(spReport.lastUpdatedDayRevision, 1);
+  assert.equal(flaReport, undefined);
+});
