@@ -12,6 +12,13 @@ function makeCode(length = 6) {
   return code;
 }
 
+function normalizeWorldFingerprint(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length > 160) throw new Error("invalid_world_fingerprint");
+  if (!/^[A-Za-z0-9._:-]+$/.test(text)) throw new Error("invalid_world_fingerprint");
+  return text;
+}
+
 function normalizeIsoDate(value) {
   const text = String(value || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("invalid_start_date");
@@ -43,7 +50,13 @@ export class RoomStore {
     this.rooms = new Map();
   }
 
-  createRoom({ connectionId, managerName, teamId, startDate = "2026-01-01" }) {
+  createRoom({
+    connectionId,
+    managerName,
+    teamId,
+    startDate = "2026-01-01",
+    worldFingerprint = "cm-dev-world",
+  }) {
     let code = makeCode();
     while (this.rooms.has(code)) code = makeCode();
 
@@ -64,6 +77,7 @@ export class RoomStore {
       revision: 0,
       dayRevision: 0,
       currentDate: normalizeIsoDate(startDate),
+      worldFingerprint: normalizeWorldFingerprint(worldFingerprint),
       ownerMemberId: member.id,
       members: new Map([[member.id, member]]),
       commands: [],
@@ -73,9 +87,14 @@ export class RoomStore {
     return { room, member };
   }
 
-  joinRoom({ code, connectionId, managerName, teamId }) {
+  joinRoom({ code, connectionId, managerName, teamId, worldFingerprint = "cm-dev-world" }) {
     const room = this.rooms.get(String(code || "").trim().toUpperCase());
     if (!room) throw new Error("room_not_found");
+
+    const expectedWorld = normalizeWorldFingerprint(worldFingerprint);
+    if (room.worldFingerprint !== expectedWorld) {
+      throw new Error("world_version_mismatch");
+    }
 
     const normalizedTeamId = sanitizeTeamId(teamId);
     for (const member of room.members.values()) {
@@ -250,6 +269,7 @@ export class RoomStore {
       revision: room.revision,
       dayRevision: room.dayRevision,
       currentDate: room.currentDate,
+      worldFingerprint: room.worldFingerprint,
       ownerMemberId: room.ownerMemberId,
       members: [...room.members.values()].map(publicMember),
     };
