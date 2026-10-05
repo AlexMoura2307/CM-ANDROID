@@ -1375,6 +1375,98 @@ def raw_player_age(raw: dict) -> int | None:
     return None
 
 
+def competition_parent_query(name: str) -> str:
+    text = str(name or "").strip()
+    patterns = (
+        r"\s+(?:u|sub|under)[ -]?(?:17|18|19|20|21|23)\s*$",
+        r"\s+(?:juvenil(?:es)?|youth|academy|reserve(?:s)?|reserva(?:s)?)\s*$",
+        r"\s+(?:b|ii)\s*$",
+    )
+    previous = None
+    while previous != text:
+        previous = text
+        for pattern in patterns:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    return text
+
+
+def repair_competition_clubs(
+    clubs: list[dict],
+    spec: CompetitionSpec,
+    qa: dict,
+) -> list[dict]:
+    repaired = []
+    seen = set()
+
+    for club in clubs:
+        club_id = str(club.get("id") or "").strip()
+        name = str(club.get("name") or "").strip()
+        if not club_id:
+            continue
+
+        candidate = club
+        if looks_like_affiliate_club_name(name):
+            base_name = competition_parent_query(name)
+            try:
+                payload = api_json(
+                    "/clubs/search/"
+                    + quote(base_name, safe="")
+                    + "?page_number=1"
+                )
+            except Exception:
+                payload = {}
+
+            best = None
+            best_score = 0.0
+            target = identity_norm(base_name)
+            for item in payload.get("results", []):
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                if looks_like_affiliate_club_name(item.get("name") or ""):
+                    continue
+                if not _country_matches_source(item.get("country"), spec.country_name):
+                    continue
+                candidate_name = identity_norm(item.get("name") or "")
+                if not candidate_name:
+                    continue
+                ratio = SequenceMatcher(None, target, candidate_name).ratio()
+                target_tokens = set(target.split())
+                candidate_tokens = set(candidate_name.split())
+                overlap = len(target_tokens & candidate_tokens) / max(
+                    1, min(len(target_tokens), len(candidate_tokens))
+                )
+                score = max(ratio, overlap)
+                if score > best_score:
+                    best_score = score
+                    best = item
+
+            if best and best_score >= 0.68:
+                qa["competitionAffiliateCorrections"].append({
+                    "competition": spec.key,
+                    "affiliateId": club_id,
+                    "affiliateName": name,
+                    "parentId": str(best["id"]),
+                    "parentName": best.get("name"),
+                    "score": round(best_score, 4),
+                })
+                candidate = best
+                club_id = str(best["id"])
+            else:
+                qa["competitionAffiliateUnresolved"].append({
+                    "competition": spec.key,
+                    "affiliateId": club_id,
+                    "affiliateName": name,
+                })
+                continue
+
+        if club_id in seen:
+            continue
+        seen.add(club_id)
+        repaired.append(candidate)
+
+    return repaired
+
+
 def resolve_competition(spec: CompetitionSpec) -> dict:
     # IDs oficiais do Transfermarkt sao preferidos: evitam confundir Apertura,
     # Clausura, copa da liga ou nomes antigos da mesma competicao.
@@ -1676,6 +1768,9 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "youthPlayersSkippedUnknownAge": 0,
         "clubsWithoutYouthSource": [],
         "affiliateCatalogEntriesExcluded": [],
+        "competitionAffiliateCorrections": [],
+        "competitionAffiliateUnresolved": [],
+        "youthBackfillRequired": [],
         "countryCatalogCounts": {},
         "profileFallbackRequests": 0,
         "profileFallbackPhotos": 0,
@@ -1708,6 +1803,11 @@ def generate(country_filter: set[str] | None = None) -> dict:
             club for club in clubs_payload.get("clubs", [])
             if club.get("id")
         ]
+        competition_clubs = repair_competition_clubs(
+            competition_clubs,
+            spec,
+            qa,
+        )
         if len(competition_clubs) < spec.min_clubs:
             raise RuntimeError(
                 f"{spec.key}: apenas {len(competition_clubs)} clubes; minimo esperado {spec.min_clubs}"
@@ -1856,17 +1956,21 @@ def generate(country_filter: set[str] | None = None) -> dict:
             }
 
             if spec.division == 1 and club_id in competition_source_ids:
-                problems = []
                 if len(raw_players) < 18:
-                    problems.append(f"principal={len(raw_players)}")
-                if not youth_club or len(youth_players) < 5:
-                    problems.append(f"base={len(youth_players)}")
-                if problems:
                     qa["playableSquadFailures"].append({
                         "clubId": team["id"],
                         "clubName": team["name"],
                         "country": spec.country_code,
-                        "problems": problems,
+                        "problems": [f"principal={len(raw_players)}"],
+                    })
+
+                if not youth_club or len(youth_players) < 12:
+                    qa["youthBackfillRequired"].append({
+                        "clubId": team["id"],
+                        "clubName": team["name"],
+                        "country": spec.country_code,
+                        "realYouthPlayers": len(youth_players),
+                        "targetYouthPlayers": 18,
                     })
 
             # ESPN entra somente nos clubes participantes da primeira divisao.
@@ -2187,6 +2291,16 @@ def generate(country_filter: set[str] | None = None) -> dict:
     (QA_ROOT / "summary.json").write_text(
         json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+    qa["academyPolicy"] = {
+        "realYouthImportedWhenAvailable": True,
+        "runtimeBackfillTarget": 18,
+        "maximumYouthAge": 20,
+        "note": (
+            "Clubes sem elenco de base publico suficiente recebem complemento "
+            "procedural no runtime do CM; jogadores reais encontrados sao preservados."
+        ),
+    }
 
     top_photo = qa["segmentStats"]["topDivisionMain"]["photoCoverage"]
     qa["photoCoverageGate"] = {
