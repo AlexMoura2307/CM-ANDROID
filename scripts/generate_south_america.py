@@ -53,6 +53,7 @@ HTTP_HEADERS = {
 # Esta cadencia deixa a geracao previsivel e evita martelar a fonte.
 _last_api_request_at = 0.0
 _last_sofa_request_at = 0.0
+_tm_lock = threading.Lock()
 _last_fotmob_request_at = 0.0
 _last_espn_request_at = 0.0
 _sofa_lock = threading.Lock()
@@ -317,21 +318,26 @@ def deterministic_rng(*parts: object) -> random.Random:
 
 def api_json(path: str) -> dict:
     global _last_api_request_at
-    elapsed = time.monotonic() - _last_api_request_at
-    if elapsed < 1.60:
-        time.sleep(1.60 - elapsed)
 
     url = path if path.startswith("http") else TM_BASE + path
     last_error = None
-    for attempt in range(4):
-        try:
-            req = urllib.request.Request(url, headers=HTTP_HEADERS)
-            _last_api_request_at = time.monotonic()
-            with urllib.request.urlopen(req, timeout=45) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            last_error = exc
-            time.sleep(3 + attempt * 3)
+
+    # A mesma rotina e usada por tarefas paralelas de foto. Serializar aqui
+    # evita bursts/races e preserva o limite da fonte.
+    with _tm_lock:
+        elapsed = time.monotonic() - _last_api_request_at
+        if elapsed < 1.60:
+            time.sleep(1.60 - elapsed)
+
+        for attempt in range(4):
+            try:
+                req = urllib.request.Request(url, headers=HTTP_HEADERS)
+                _last_api_request_at = time.monotonic()
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                last_error = exc
+                time.sleep(3 + attempt * 3)
     raise RuntimeError(f"Transfermarkt API indisponivel para {url}: {last_error}")
 
 
@@ -1994,6 +2000,8 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 })
 
             # Fotos do clube em paralelo; a identidade continua sendo o ID TM.
+            main_player_ids = {str(p["id"]) for p in raw_players}
+
             def _photo_job(p: dict) -> tuple[str, str | None, str | None]:
                 pid = f"tm-player-{p['id']}"
                 path = download_asset(pid, p.get("imageUrl"), ASSETS_PLAYERS)
@@ -2010,6 +2018,21 @@ def generate(country_filter: set[str] | None = None) -> dict:
                     )
                     path = download_asset(pid, fallback_url, ASSETS_PLAYERS)
                     source = "fotmob" if path else None
+
+                # Ultima tentativa para o elenco principal: consulta o perfil
+                # Transfermarkt pelo MESMO ID do jogador. Nao ha matching por nome.
+                if not path and str(p["id"]) in main_player_ids:
+                    qa["profileFallbackRequests"] = qa.get("profileFallbackRequests", 0) + 1
+                    try:
+                        profile = api_json(f"/players/{p['id']}/profile")
+                    except Exception:
+                        profile = {}
+                    profile_url = profile.get("imageUrl") or profile.get("image_url")
+                    path = download_asset(pid, profile_url, ASSETS_PLAYERS)
+                    if path:
+                        source = "tm-profile"
+                        qa["profileFallbackPhotos"] = qa.get("profileFallbackPhotos", 0) + 1
+
                 return pid, path, source
 
             photo_paths: dict[str, str | None] = {}
