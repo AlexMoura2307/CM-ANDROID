@@ -201,3 +201,41 @@ test("invalid online career start date is rejected", () => {
     /invalid_start_date/,
   );
 });
+
+
+test("online room rejects a client using a different world database", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+    worldFingerprint: "south-america-2026:abc123",
+  });
+
+  assert.throws(
+    () =>
+      store.joinRoom({
+        code: room.code,
+        connectionId: "b",
+        managerName: "Manager B",
+        teamId: "flamengo",
+        worldFingerprint: "south-america-2026:def456",
+      }),
+    /world_version_mismatch/,
+  );
+});
+
+test("online room exposes the database fingerprint used by every human", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+    worldFingerprint: "south-america-2026:abc123",
+  });
+
+  assert.equal(
+    store.publicState(room).worldFingerprint,
+    "south-america-2026:abc123",
+  );
+});
