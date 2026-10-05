@@ -168,6 +168,129 @@ mcp_format = mcp_format.replace(
 )
 mcp_format_path.write_text(mcp_format, encoding="utf-8")
 
+# Regra CM da base: nenhum jogador acima de 20 anos e academia completa.
+# Jogadores reais de base vindos do pacote sao preservados. Quando a fonte
+# publica nao fornece atletas suficientes, o runtime gera apenas as vagas
+# restantes para que cada clube tenha uma base utilizavel.
+roster_rs_path = root / "src-tauri" / "crates" / "ofm_core" / "src" / "roster.rs"
+roster_rs = roster_rs_path.read_text(encoding="utf-8")
+if "pub const YOUTH_ACADEMY_MAX_AGE: i32 = 21;" not in roster_rs:
+    raise RuntimeError("YOUTH_ACADEMY_MAX_AGE upstream marker not found")
+roster_rs = roster_rs.replace(
+    "pub const YOUTH_ACADEMY_MAX_AGE: i32 = 21;",
+    "pub const YOUTH_ACADEMY_MAX_AGE: i32 = 20;",
+    1,
+)
+roster_rs_path.write_text(roster_rs, encoding="utf-8")
+
+generator_rs_path = root / "src-tauri" / "crates" / "ofm_core" / "src" / "generator" / "mod.rs"
+generator_rs = generator_rs_path.read_text(encoding="utf-8")
+cm_youth_helper_marker = """/// Build a club for a world package: start from a generated squad, then swap
+"""
+cm_youth_helper = """fn ensure_cm_package_youth_academy(
+    team: &Team,
+    players: &mut Vec<Player>,
+    opening_year: u32,
+    names_def: &NamesDefinition,
+    rng: &mut impl rand::Rng,
+) {
+    use domain::player::SquadRole;
+
+    const CM_PACKAGE_YOUTH_TARGET: usize = 18;
+    const CM_PACKAGE_YOUTH_MAX_AGE: i32 = 20;
+
+    let mut youth_count = players
+        .iter()
+        .filter(|player| {
+            player.squad_role == SquadRole::Youth
+                && opening_player_age(&player.date_of_birth, opening_year as i32)
+                    .is_some_and(|age| age <= CM_PACKAGE_YOUTH_MAX_AGE)
+        })
+        .count();
+
+    let nationality = team_local_nationality(team).to_string();
+    let mut generated_index = 0usize;
+
+    while youth_count < CM_PACKAGE_YOUTH_TARGET {
+        let slot = YOUTH_RESERVED_SLOTS[generated_index % YOUTH_RESERVED_SLOTS.len()];
+        let age = 17 + (generated_index % 4) as u32;
+        let mut prospect = generate_random_player_from_def(
+            &team.id,
+            slot,
+            &nationality,
+            opening_year,
+            Some(age),
+            names_def,
+            rng,
+        );
+        prospect.squad_role = SquadRole::Youth;
+        players.push(prospect);
+        youth_count += 1;
+        generated_index += 1;
+    }
+}
+
+/// Build a club for a world package: start from a generated squad, then swap
+"""
+if cm_youth_helper_marker not in generator_rs:
+    raise RuntimeError("build_package_club helper marker not found")
+generator_rs = generator_rs.replace(
+    cm_youth_helper_marker,
+    cm_youth_helper,
+    1,
+)
+
+empty_authored_old = """    if authored.is_empty() {
+        return (team, players, staff);
+    }
+"""
+empty_authored_new = """    if authored.is_empty() {
+        ensure_cm_package_youth_academy(
+            &team,
+            &mut players,
+            opening_year,
+            names_def,
+            rng,
+        );
+        let authored_ids = HashSet::new();
+        normalize_generated_team(
+            &mut team,
+            &mut players,
+            opening_year as i32,
+            &authored_ids,
+        );
+        return (team, players, staff);
+    }
+"""
+if empty_authored_old not in generator_rs:
+    raise RuntimeError("authored empty package marker not found")
+generator_rs = generator_rs.replace(
+    empty_authored_old,
+    empty_authored_new,
+    1,
+)
+
+trim_old = """    trim_backfill_players(&mut players, &placed, authored.len(), opening_year as i32);
+
+    // Authored wages may differ from the players they replaced, so re-normalise
+"""
+trim_new = """    trim_backfill_players(&mut players, &placed, authored.len(), opening_year as i32);
+
+    ensure_cm_package_youth_academy(
+        &team,
+        &mut players,
+        opening_year,
+        names_def,
+        rng,
+    );
+
+    // Authored wages may differ from the players they replaced, so re-normalise
+"""
+if trim_old not in generator_rs:
+    raise RuntimeError("trim_backfill_players package marker not found")
+generator_rs = generator_rs.replace(trim_old, trim_new, 1)
+generator_rs_path.write_text(generator_rs, encoding="utf-8")
+
 # Título da janela
 app_path = root / "src" / "App.tsx"
 app = app_path.read_text(encoding="utf-8")
