@@ -191,10 +191,20 @@ jobs:
           fi
           echo "apk_dir=$APK_DIR" >> "$GITHUB_OUTPUT"
 
+      - name: Verify APK identity and size
+        shell: bash
+        run: |
+          APK_FILE="$(find upstream/src-tauri/gen/android -type f -name "*.apk" | head -n 1)"
+          test -n "$APK_FILE"
+          test "$(stat -c%s "$APK_FILE")" -gt 5000000
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_FILE" | tee /tmp/cm-apk-badging.txt
+          grep -q "package: name='com.cm.clubemanager.test4'" /tmp/cm-apk-badging.txt
+          cp "$APK_FILE" /tmp/CM_Teste_4_ARM64.apk
+
       - name: Upload CM Teste 4 APK
         uses: actions/upload-artifact@v4
         with:
           name: CM-Teste-4-Android-APK
-          path: ${{ steps.apk.outputs.apk_dir }}/*.apk
+          path: /tmp/CM_Teste_4_ARM64.apk
           if-no-files-found: error
           retention-days: 14
