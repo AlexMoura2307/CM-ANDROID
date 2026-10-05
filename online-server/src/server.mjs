@@ -1,5 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   ONLINE_PROTOCOL_VERSION,
@@ -10,8 +12,32 @@ import {
 import { RoomStore } from "./roomStore.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
-const store = new RoomStore();
+const STATE_FILE = process.env.CM_ONLINE_STATE_FILE || "./data/cm-online-state.json";
+
+function loadSnapshot() {
+  try {
+    if (!fs.existsSync(STATE_FILE)) return null;
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  } catch (e) {
+    console.error("Failed to load online snapshot:", e);
+    return null;
+  }
+}
+
+const store = new RoomStore(loadSnapshot());
 const sockets = new Map();
+
+function persistSnapshot() {
+  try {
+    const dir = path.dirname(STATE_FILE);
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = `${STATE_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(store.serializeSnapshot()), "utf8");
+    fs.renameSync(tmp, STATE_FILE);
+  } catch (e) {
+    console.error("Failed to persist online snapshot:", e);
+  }
+}
 
 function send(ws, type, payload = {}) {
   if (ws.readyState !== WebSocket.OPEN) return;
@@ -78,6 +104,7 @@ wss.on("connection", (ws) => {
             resumeToken: member.resumeToken,
           });
           broadcastRoom(room);
+          persistSnapshot();
           break;
         }
 
@@ -96,6 +123,7 @@ wss.on("connection", (ws) => {
             resumeToken: member.resumeToken,
           });
           broadcastRoom(room);
+          persistSnapshot();
           break;
         }
 
@@ -111,6 +139,7 @@ wss.on("connection", (ws) => {
             resumeToken: member.resumeToken,
           });
           broadcastRoom(room);
+          persistSnapshot();
           break;
         }
 
@@ -126,6 +155,7 @@ wss.on("connection", (ws) => {
         case ClientMessage.READY: {
           const { room } = store.setReady(connectionId, msg.ready);
           broadcastRoom(room);
+          persistSnapshot();
           break;
         }
 
@@ -138,6 +168,7 @@ wss.on("connection", (ws) => {
             duplicate,
           });
           broadcastRoom(room);
+          persistSnapshot();
           break;
         }
 
@@ -156,12 +187,14 @@ wss.on("connection", (ws) => {
             }
           }
           broadcastRoom(result.room);
+          persistSnapshot();
           break;
         }
 
         case ClientMessage.LEAVE_ROOM: {
           const result = store.remove(connectionId);
           if (result?.room) broadcastRoom(result.room);
+          persistSnapshot();
           break;
         }
 
@@ -181,6 +214,7 @@ wss.on("connection", (ws) => {
     sockets.delete(connectionId);
     const found = store.disconnect(connectionId);
     if (found?.room) broadcastRoom(found.room);
+    persistSnapshot();
   });
 });
 
