@@ -1,5 +1,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
+from urllib.parse import quote, urlparse
 import json, shutil, time, unicodedata, urllib.request
 
 root = Path("wfe-brasil-fase1")
@@ -8,6 +10,7 @@ if root.exists():
 (root/"teams").mkdir(parents=True)
 (root/"competitions").mkdir(parents=True)
 (root/"players").mkdir(parents=True)
+(root/"assets"/"players").mkdir(parents=True)
 
 A = [
 ("athletico-pr","Athletico Paranaense","CAP","Curitiba","#d71920","#000000"),
@@ -86,27 +89,45 @@ teams=[team(x,[650,900],[5000000,25000000]) for x in A]+[team(x,[450,700],[20000
 
 
 # Elencos reais da Serie A 2026.
-# Fonte operacional: API publica da ESPN. Os dados sao materializados no pacote
-# no momento do build; o APK final nao depende de internet para exibir o elenco.
+# ESPN e a fonte de identidade/elenco. Transfermarkt enriquece cada atleta com
+# posicao especifica e foto real. As fotos sao baixadas no build e empacotadas
+# localmente, para o APK nao depender de links externos durante o jogo.
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1"
+TRANSFERMARKT_BASE = "https://transfermarkt-api.fly.dev"
+
+HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+    "Accept": "application/json,text/plain,*/*",
+}
 
 def _http_json_url(url):
     last_error = None
     for attempt in range(4):
         try:
-            request = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
-                    "Accept": "application/json,text/plain,*/*",
-                },
-            )
-            with urllib.request.urlopen(request, timeout=25) as response:
+            request = urllib.request.Request(url, headers=HTTP_HEADERS)
+            with urllib.request.urlopen(request, timeout=35) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             last_error = exc
             time.sleep(2 + attempt * 2)
-    raise RuntimeError(f"ESPN indisponivel para {url}: {last_error}")
+    raise RuntimeError(f"Fonte de dados indisponivel para {url}: {last_error}")
+
+def _http_bytes_url(url):
+    last_error = None
+    headers = dict(HTTP_HEADERS)
+    headers["Accept"] = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+    for attempt in range(3):
+        try:
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read()
+                if len(data) < 512:
+                    raise RuntimeError("imagem vazia ou invalida")
+                return data
+        except Exception as exc:
+            last_error = exc
+            time.sleep(1 + attempt * 2)
+    return None
 
 def _norm(value):
     value = unicodedata.normalize("NFKD", value or "")
@@ -211,6 +232,165 @@ def _position(player):
     }
     return exact.get(raw, "Midfielder")
 
+TM_POSITION_MAP = {
+    "goalkeeper": "Goalkeeper",
+    "centre back": "CenterBack",
+    "center back": "CenterBack",
+    "sweeper": "CenterBack",
+    "left back": "LeftBack",
+    "right back": "RightBack",
+    "left wing back": "LeftWingBack",
+    "right wing back": "RightWingBack",
+    "defensive midfield": "DefensiveMidfielder",
+    "central midfield": "CentralMidfielder",
+    "attacking midfield": "AttackingMidfielder",
+    "left midfield": "LeftMidfielder",
+    "right midfield": "RightMidfielder",
+    "left winger": "LeftWinger",
+    "right winger": "RightWinger",
+    "centre forward": "Striker",
+    "center forward": "Striker",
+    "second striker": "Striker",
+    "striker": "Striker",
+}
+
+SPECIFIC_POSITIONS = set(TM_POSITION_MAP.values())
+
+def _tm_position(value):
+    key = _norm(str(value or "").replace("-", " "))
+    return TM_POSITION_MAP.get(key)
+
+def _tm_foot(value):
+    key = _norm(str(value or ""))
+    if key in {"left", "esquerdo", "esquerda"}:
+        return "Left"
+    if key in {"both", "ambidextrous", "ambidestro"}:
+        return "Both"
+    if key:
+        return "Right"
+    return None
+
+def _tm_find_club(team_id, team_name):
+    aliases = [team_name] + ESPN_ALIASES.get(team_id, [])
+    alias_norms = {_norm(value) for value in aliases if value}
+    best = None
+    best_score = -1.0
+    seen_queries = set()
+    for query_text in aliases:
+        query_key = _norm(query_text)
+        if not query_key or query_key in seen_queries:
+            continue
+        seen_queries.add(query_key)
+        try:
+            payload = _http_json_url(
+                TRANSFERMARKT_BASE + "/clubs/search/" + quote(query_text, safe="")
+            )
+        except Exception:
+            continue
+        for candidate in payload.get("results", []):
+            name = candidate.get("name") or ""
+            country = _norm(candidate.get("country") or "")
+            candidate_norm = _norm(name)
+            if not candidate.get("id") or not candidate_norm:
+                continue
+            if country and country not in {"brazil", "brasil"}:
+                continue
+            if candidate_norm in alias_norms:
+                score = 1.0
+            else:
+                score = max(
+                    SequenceMatcher(None, candidate_norm, alias).ratio()
+                    for alias in alias_norms
+                )
+            if score > best_score:
+                best = candidate
+                best_score = score
+        if best_score >= 0.98:
+            break
+    if best is None or best_score < 0.58:
+        return None
+    return best
+
+def _tm_players_for_team(team_id, team_name):
+    club = _tm_find_club(team_id, team_name)
+    if club is None:
+        return []
+    try:
+        payload = _http_json_url(
+            TRANSFERMARKT_BASE + f"/clubs/{club['id']}/players"
+        )
+    except Exception:
+        return []
+    return [p for p in payload.get("players", []) if isinstance(p, dict) and p.get("id")]
+
+def _match_tm_player(player, tm_players):
+    espn_name = _norm(
+        player.get("displayName")
+        or player.get("fullName")
+        or player.get("name")
+        or ""
+    )
+    if not espn_name:
+        return None
+
+    # 1. Nome exato normalizado.
+    exact = [p for p in tm_players if _norm(p.get("name") or "") == espn_name]
+    if exact:
+        return exact[0]
+
+    # 2. Data de nascimento e semelhanca de nome.
+    birth = _birth_date(player)
+    if birth:
+        born = [
+            p for p in tm_players
+            if str(p.get("dateOfBirth") or "")[:10] == birth
+        ]
+        if born:
+            return max(
+                born,
+                key=lambda p: SequenceMatcher(
+                    None, espn_name, _norm(p.get("name") or "")
+                ).ratio(),
+            )
+
+    # 3. Fallback por semelhanca forte dentro do mesmo clube.
+    scored = []
+    for candidate in tm_players:
+        tm_name = _norm(candidate.get("name") or "")
+        if not tm_name:
+            continue
+        ratio = SequenceMatcher(None, espn_name, tm_name).ratio()
+        espn_tokens = set(espn_name.split())
+        tm_tokens = set(tm_name.split())
+        overlap = len(espn_tokens & tm_tokens) / max(1, min(len(espn_tokens), len(tm_tokens)))
+        scored.append((max(ratio, overlap), candidate))
+    if not scored:
+        return None
+    score, candidate = max(scored, key=lambda item: item[0])
+    return candidate if score >= 0.72 else None
+
+def _photo_extension(url):
+    ext = urlparse(url).path.rsplit(".", 1)
+    if len(ext) == 2:
+        suffix = "." + ext[1].lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+            return suffix
+    return ".jpg"
+
+def _download_player_photo(team_id, player_id, *urls):
+    for url in urls:
+        if not url:
+            continue
+        data = _http_bytes_url(str(url))
+        if not data:
+            continue
+        rel = f"assets/players/{team_id}/{player_id}{_photo_extension(str(url))}"
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        return rel
+    return None
+
 NATION_CODE_MAP = {
     "BRA": "BR", "ARG": "AR", "URU": "UY", "COL": "CO", "PAR": "PY", "PRY": "PY",
     "CHI": "CL", "CHL": "CL", "ECU": "EC", "VEN": "VE", "PER": "PE", "BOL": "BO",
@@ -282,13 +462,18 @@ def _potential(overall, age, player_id):
 
 def fetch_real_serie_a_players():
     teams_payload = _http_json_url(ESPN_BASE + "/teams")
-    espn_teams = {_norm(team.get("displayName") or team.get("name")): team for team in _espn_teams(teams_payload)}
+    espn_teams = {
+        _norm(team.get("displayName") or team.get("name")): team
+        for team in _espn_teams(teams_payload)
+    }
 
     results = []
     counts = {}
+    matched_positions = {}
+    matched_photos = {}
     missing = []
 
-    for team_id, *_ in A:
+    for team_id, team_name, *_ in A:
         found = None
         aliases = [_norm(value) for value in ESPN_ALIASES.get(team_id, [])]
         for alias in aliases:
@@ -305,7 +490,12 @@ def fetch_real_serie_a_players():
             continue
 
         payload = _http_json_url(ESPN_BASE + f"/teams/{found['id']}/roster")
+        tm_players = _tm_players_for_team(team_id, team_name)
+
         seen = set()
+        specific_count = 0
+        photo_count = 0
+
         for player in _espn_roster_items(payload):
             player_id = player.get("id")
             if not player_id or str(player_id) in seen:
@@ -317,6 +507,24 @@ def fetch_real_serie_a_players():
             display_name, first, last = _names(player)
             overall = _rating(team_id, player_id, age)
 
+            tm_player = _match_tm_player(player, tm_players)
+            tm_position = _tm_position(tm_player.get("position")) if tm_player else None
+            position = tm_position or _position(player)
+            if tm_position in SPECIFIC_POSITIONS:
+                specific_count += 1
+
+            headshot = player.get("headshot") or {}
+            espn_headshot = headshot.get("href") if isinstance(headshot, dict) else None
+            tm_photo = tm_player.get("imageUrl") if tm_player else None
+            photo = _download_player_photo(
+                team_id,
+                f"espn-{player_id}",
+                tm_photo,
+                espn_headshot,
+            )
+            if photo:
+                photo_count += 1
+
             item = {
                 "id": f"espn-{player_id}",
                 "name": display_name,
@@ -324,38 +532,75 @@ def fetch_real_serie_a_players():
                 "lastName": last,
                 "club": team_id,
                 "nationality": _nationality(player),
-                "position": _position(player),
+                "position": position,
                 "overall": overall,
                 "potential": _potential(overall, age, player_id),
                 "youth": False,
             }
+
+            if tm_player:
+                foot = _tm_foot(tm_player.get("foot"))
+                if foot:
+                    item["footedness"] = foot
+                value = tm_player.get("marketValue")
+                if isinstance(value, int) and value >= 0:
+                    item["value"] = value
+
+            if photo:
+                item["photo"] = photo
+
             if birth:
                 item["dateOfBirth"] = birth
             else:
                 item["age"] = age
+
             results.append(item)
 
         counts[team_id] = len(seen)
+        matched_positions[team_id] = specific_count
+        matched_photos[team_id] = photo_count
         time.sleep(0.10)
 
     if missing:
         raise RuntimeError("Times da Serie A nao encontrados na ESPN: " + ", ".join(missing))
+
     too_small = {team_id: count for team_id, count in counts.items() if count < 15}
     if too_small:
         raise RuntimeError(f"Elencos reais incompletos na ESPN: {too_small}")
+
     if len(results) < 360:
         raise RuntimeError(f"Poucos jogadores reais coletados para Serie A: {len(results)}")
 
+    # QA: nao gerar novo APK com as posicoes voltando ao modelo generico.
+    weak_positions = {
+        team_id: f"{matched_positions.get(team_id, 0)}/{count}"
+        for team_id, count in counts.items()
+        if count and matched_positions.get(team_id, 0) / count < 0.70
+    }
+    if weak_positions:
+        raise RuntimeError(
+            "Transfermarkt nao confirmou posicoes especificas suficientes: "
+            + str(weak_positions)
+        )
+
+    total_photos = sum(matched_photos.values())
+    if total_photos < int(len(results) * 0.70):
+        raise RuntimeError(
+            f"Poucas fotos reais baixadas: {total_photos}/{len(results)}"
+        )
+
     print("WFE Brasil: jogadores reais Serie A =", len(results))
     print("WFE Brasil: atletas por clube =", counts)
+    print("WFE Brasil: posicoes especificas =", matched_positions)
+    print("WFE Brasil: fotos reais locais =", matched_photos)
     return results
 
 real_serie_a_players = fetch_real_serie_a_players()
 
 manifest={
  "schema":"world","id":"wfe-brasil-2026-fase1","name":"WFE Brasil 2026 - Fase 1",
- "description":"Base WFE Brasil com Series A, B e C, copas nacionais e elencos reais da Serie A 2026.",
- "version":"0.2.0","author":"WFE","license":"CC0-1.0","packageType":"database",
+ "description":"Base WFE Brasil com Series A, B e C, copas nacionais, elencos reais da Serie A 2026, posicoes especificas e fotos reais locais.",
+ "version":"0.3.0","author":"WFE","license":"CC0-1.0","packageType":"database",
  "gameMinVersion":"0.3.0","formatVersion":1,"baseYear":2026,
  "defaultActiveRegions":[],"defaultActiveCompetitions":["br-serie-a","br-serie-b","br-serie-c","br-copa-do-brasil","br-supercopa"]
 }
