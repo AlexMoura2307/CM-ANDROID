@@ -290,3 +290,57 @@ test("invalid multiplayer snapshot is rejected", () => {
     /invalid_room_snapshot/,
   );
 });
+
+
+test("only the host can start and every connected human must be ready", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "guest",
+    managerName: "Guest",
+    teamId: "flamengo",
+  });
+
+  assert.throws(() => store.startGame("guest"), /only_room_owner_can_start/);
+  store.setReady("host", true);
+  assert.throws(() => store.startGame("host"), /not_all_managers_ready/);
+
+  store.setReady("guest", true);
+  const started = store.startGame("host");
+  assert.equal(started.room.phase, "active");
+  assert.ok(started.room.startedAt);
+});
+
+test("new managers cannot join after multiplayer game starts", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "guest",
+    managerName: "Guest",
+    teamId: "flamengo",
+  });
+  store.setReady("host", true);
+  store.setReady("guest", true);
+  store.startGame("host");
+
+  assert.throws(
+    () =>
+      store.joinRoom({
+        code: room.code,
+        connectionId: "late",
+        managerName: "Late",
+        teamId: "palmeiras",
+      }),
+    /room_already_started/,
+  );
+});
