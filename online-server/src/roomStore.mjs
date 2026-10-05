@@ -46,8 +46,82 @@ function publicMember(member) {
 }
 
 export class RoomStore {
-  constructor() {
+  constructor(snapshot = null) {
     this.rooms = new Map();
+    if (snapshot) this.restoreSnapshot(snapshot);
+  }
+
+  serializeSnapshot() {
+    return {
+      version: 1,
+      rooms: [...this.rooms.values()].map((room) => ({
+        code: room.code,
+        revision: room.revision,
+        dayRevision: room.dayRevision,
+        currentDate: room.currentDate,
+        worldFingerprint: room.worldFingerprint,
+        ownerMemberId: room.ownerMemberId,
+        createdAt: room.createdAt,
+        commands: room.commands,
+        members: [...room.members.values()].map((member) => ({
+          ...member,
+          connected: false,
+          ready: false,
+          advanceReady: false,
+          connectionId: null,
+        })),
+      })),
+    };
+  }
+
+  restoreSnapshot(snapshot) {
+    if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.rooms)) {
+      throw new Error("invalid_room_snapshot");
+    }
+
+    this.rooms.clear();
+    for (const rawRoom of snapshot.rooms) {
+      const code = String(rawRoom.code || "").trim().toUpperCase();
+      if (!code) continue;
+
+      const members = new Map();
+      for (const rawMember of rawRoom.members || []) {
+        const memberId = String(rawMember.id || "").trim();
+        const resumeToken = String(rawMember.resumeToken || "").trim();
+        if (!memberId || !resumeToken) continue;
+        members.set(memberId, {
+          id: memberId,
+          connectionId: null,
+          resumeToken,
+          managerName: sanitizeManagerName(rawMember.managerName),
+          teamId: sanitizeTeamId(rawMember.teamId),
+          ready: false,
+          advanceReady: false,
+          connected: false,
+          joinedAt: Number(rawMember.joinedAt) || Date.now(),
+        });
+      }
+      if (members.size === 0) continue;
+
+      let ownerMemberId = String(rawRoom.ownerMemberId || "");
+      if (!members.has(ownerMemberId)) {
+        ownerMemberId = [...members.keys()][0];
+      }
+
+      this.rooms.set(code, {
+        code,
+        revision: Math.max(0, Number(rawRoom.revision) || 0),
+        dayRevision: Math.max(0, Number(rawRoom.dayRevision) || 0),
+        currentDate: normalizeIsoDate(rawRoom.currentDate || "2026-01-01"),
+        worldFingerprint: normalizeWorldFingerprint(
+          rawRoom.worldFingerprint || "cm-dev-world",
+        ),
+        ownerMemberId,
+        members,
+        commands: Array.isArray(rawRoom.commands) ? rawRoom.commands.slice(-5000) : [],
+        createdAt: Number(rawRoom.createdAt) || Date.now(),
+      });
+    }
   }
 
   createRoom({
