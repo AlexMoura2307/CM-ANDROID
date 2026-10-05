@@ -633,6 +633,69 @@ def build_team(profile: dict, spec: CompetitionSpec, logo_path: str | None) -> d
     return team
 
 
+def enrich_missing_player_photo(raw: dict, qa: dict) -> dict:
+    """Fetch the player's own TM profile when the roster row has no photo.
+
+    The lookup is always by the same Transfermarkt player ID, so a recovered
+    photo cannot drift to a namesake. Profile data also fills missing real
+    biographical fields when available.
+    """
+    if raw.get("imageUrl"):
+        return raw
+
+    qa["profileFallbackRequests"] = qa.get("profileFallbackRequests", 0) + 1
+    player_id = str(raw.get("id") or "").strip()
+    if not player_id:
+        return raw
+
+    try:
+        profile = api_json(f"/players/{player_id}/profile")
+    except Exception:
+        return raw
+
+    enriched = dict(raw)
+    image_url = profile.get("imageUrl") or profile.get("image_url")
+    if image_url:
+        enriched["imageUrl"] = str(image_url)
+        qa["profileFallbackPhotos"] = qa.get("profileFallbackPhotos", 0) + 1
+
+    mapping = {
+        "dateOfBirth": ("dateOfBirth", "date_of_birth"),
+        "age": ("age",),
+        "height": ("height",),
+        "foot": ("foot",),
+        "marketValue": ("marketValue", "market_value"),
+    }
+    for target, source_keys in mapping.items():
+        if enriched.get(target) not in (None, "", []):
+            continue
+        for source_key in source_keys:
+            value = profile.get(source_key)
+            if value not in (None, "", []):
+                enriched[target] = value
+                break
+
+    citizenship = profile.get("citizenship") or profile.get("nationality")
+    if not enriched.get("nationality") and citizenship:
+        enriched["nationality"] = citizenship if isinstance(citizenship, list) else [citizenship]
+
+    position = profile.get("position")
+    if isinstance(position, dict):
+        main_position = position.get("main")
+        if main_position:
+            enriched["position"] = main_position
+    elif position and not enriched.get("position"):
+        enriched["position"] = position
+
+    club = profile.get("club")
+    if isinstance(club, dict) and not enriched.get("contract"):
+        contract = club.get("contractExpires") or club.get("contract_expires")
+        if contract:
+            enriched["contract"] = contract
+
+    return enriched
+
+
 def build_player(
     raw: dict,
     team_id: str,
@@ -746,6 +809,8 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "positionCounts": {},
         "rosterWarnings": [],
         "countryCatalogCounts": {},
+        "profileFallbackRequests": 0,
+        "profileFallbackPhotos": 0,
         "source": "Transfermarkt public JSON API",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
     }
@@ -812,6 +877,15 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 p for p in roster.get("players", [])
                 if isinstance(p, dict) and p.get("id")
             ]
+
+            # O endpoint de elenco nem sempre traz imageUrl, especialmente em
+            # divisões menores. Busca o perfil PELO MESMO ID apenas nesses casos.
+            # Isso aumenta a cobertura sem usar nome como chave de foto.
+            raw_players = [
+                enrich_missing_player_photo(player, qa)
+                for player in raw_players
+            ]
+
             if len(raw_players) < 14:
                 qa["rosterWarnings"].append({
                     "clubId": team["id"],
