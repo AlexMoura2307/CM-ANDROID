@@ -1,0 +1,50 @@
+name: QA CM Runtime Patches
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/prepare_cm.py"
+      - ".github/workflows/cm-runtime-patch-qa.yml"
+
+jobs:
+  qa-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout CM repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager base
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Apply CM runtime patches
+        run: python3 scripts/prepare_cm.py
+
+      - name: Verify CM rules
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          frontend = Path("upstream/src/pages/MainMenu.tsx").read_text()
+          backend = Path("upstream/src-tauri/src/commands/game/mod.rs").read_text()
+          roster = Path("upstream/src-tauri/crates/ofm_core/src/roster.rs").read_text()
+          generator = Path("upstream/src-tauri/crates/ofm_core/src/generator/mod.rs").read_text()
+
+          assert "const MANAGER_MINIMUM_AGE = 18;" in frontend
+          assert "if age < 18 {" in backend
+          assert "pub const YOUTH_ACADEMY_MAX_AGE: i32 = 20;" in roster
+          assert "const CM_PACKAGE_YOUTH_TARGET: usize = 18;" in generator
+          assert "ensure_cm_package_youth_academy" in generator
+          print("CM runtime rules verified")
+          PY
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile ofm_core with CM academy patch
+        run: cargo check --manifest-path upstream/src-tauri/Cargo.toml -p ofm_core
