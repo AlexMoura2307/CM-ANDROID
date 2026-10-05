@@ -160,3 +160,44 @@ test("sync returns only commands newer than the client's revision", () => {
   assert.equal(sync.commands.length, 1);
   assert.equal(sync.commands[0].clientCommandId, "cmd-2");
 });
+
+
+test("server is the source of truth for career date and advances exactly one day", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+    startDate: "2026-03-14",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "b",
+    managerName: "Manager B",
+    teamId: "flamengo",
+  });
+
+  assert.equal(room.currentDate, "2026-03-14");
+  store.setReady("a", true);
+  store.setReady("b", true);
+  store.markAdvanceReady("a", true);
+  const result = store.markAdvanceReady("b", true);
+
+  assert.equal(result.advanced, true);
+  assert.equal(room.currentDate, "2026-03-15");
+  assert.equal(room.dayRevision, 1);
+});
+
+test("invalid online career start date is rejected", () => {
+  const store = new RoomStore();
+  assert.throws(
+    () =>
+      store.createRoom({
+        connectionId: "a",
+        managerName: "Manager A",
+        teamId: "sao-paulo",
+        startDate: "2026-02-31",
+      }),
+    /invalid_start_date/,
+  );
+});
