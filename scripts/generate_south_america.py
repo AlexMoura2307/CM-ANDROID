@@ -380,10 +380,8 @@ def sofa_entity(entry: dict) -> dict:
     return entry
 
 
-def fotmob_json(name: str) -> dict:
+def fotmob_get(url: str) -> dict:
     global _last_fotmob_request_at
-    query = urlencode({"term": name, "lang": "en"})
-    url = FOTMOB_SEARCH + "?" + query
 
     headers = dict(HTTP_HEADERS)
     headers["Referer"] = "https://www.fotmob.com/"
@@ -401,6 +399,33 @@ def fotmob_json(name: str) -> dict:
             except Exception:
                 time.sleep(0.8 + attempt * 1.2)
     return {}
+
+
+def fotmob_json(name: str) -> dict:
+    query = urlencode({"term": name, "lang": "en"})
+    return fotmob_get(FOTMOB_SEARCH + "?" + query)
+
+
+def fotmob_player_data(fotmob_id: str, qa: dict) -> dict:
+    qa["fotmobPlayerDataRequests"] = qa.get("fotmobPlayerDataRequests", 0) + 1
+    payload = fotmob_get(
+        "https://www.fotmob.com/api/data/playerData?"
+        + urlencode({"id": fotmob_id})
+    )
+    if payload:
+        qa["fotmobPlayerDataResponses"] = qa.get("fotmobPlayerDataResponses", 0) + 1
+    return payload
+
+
+def fotmob_birth_date(payload: dict) -> str | None:
+    birth = payload.get("birthDate")
+    if isinstance(birth, dict):
+        raw = str(birth.get("utcTime") or "").strip()
+    else:
+        raw = str(birth or "").strip()
+    if len(raw) >= 10 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw[:10]):
+        return raw[:10]
+    return None
 
 
 def club_name_matches(source_club: str, candidate_club: str) -> bool:
@@ -426,53 +451,113 @@ def fotmob_player_photo(
     if not name:
         return None
 
-    qa["fotmobSearchRequests"] = qa.get("fotmobSearchRequests", 0) + 1
-    payload = fotmob_json(name)
-    groups = payload.get("squadMemberSuggest", [])
-    if not isinstance(groups, list):
-        return None
-
     target_name = identity_norm(name)
-    matches = []
+    target_dob = str(tm_player.get("dateOfBirth") or "")[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", target_dob):
+        target_dob = ""
 
-    for group in groups:
-        if not isinstance(group, dict):
+    # Try the exact display name first, then an accent-free spelling and finally
+    # the surname when necessary. All candidates still need identity validation.
+    queries = [name]
+    ascii_name = identity_norm(name)
+    if ascii_name and identity_norm(ascii_name) != target_name:
+        queries.append(ascii_name)
+    words = [w for w in ascii_name.split() if len(w) >= 3]
+    if len(words) >= 2:
+        queries.append(" ".join(words[-2:]))
+        queries.append(words[-1])
+
+    candidate_by_id = {}
+    for query_name in dict.fromkeys(queries):
+        qa["fotmobSearchRequests"] = qa.get("fotmobSearchRequests", 0) + 1
+        payload = fotmob_json(query_name)
+        groups = payload.get("squadMemberSuggest", [])
+        if not isinstance(groups, list):
             continue
-        for option in group.get("options", []) or []:
-            if not isinstance(option, dict):
+        for group in groups:
+            if not isinstance(group, dict):
                 continue
-            payload_data = option.get("payload") or {}
-            if payload_data.get("isCoach") is True:
-                continue
+            for option in group.get("options", []) or []:
+                if not isinstance(option, dict):
+                    continue
+                payload_data = option.get("payload") or {}
+                if payload_data.get("isCoach") is True:
+                    continue
+                fotmob_id = str(payload_data.get("id") or "").strip()
+                if not fotmob_id:
+                    continue
+                option_text = str(option.get("text") or group.get("text") or "")
+                candidate_name = option_text.split("|", 1)[0].strip()
+                candidate_norm = identity_norm(candidate_name)
+                if not candidate_norm:
+                    continue
+                ratio = SequenceMatcher(None, target_name, candidate_norm).ratio()
+                token_overlap = len(set(target_name.split()) & set(candidate_norm.split())) / max(
+                    1, min(len(set(target_name.split())), len(set(candidate_norm.split())))
+                )
+                if ratio < 0.72 and token_overlap < 0.75:
+                    continue
+                candidate_by_id[fotmob_id] = {
+                    "name": candidate_name,
+                    "nameRatio": ratio,
+                    "tokenOverlap": token_overlap,
+                    "suggestTeam": str(payload_data.get("teamName") or "").strip(),
+                }
 
-            fotmob_id = str(payload_data.get("id") or "").strip()
-            if not fotmob_id:
-                continue
+        # Exact full-name results are enough; avoid extra broad searches.
+        if any(
+            identity_norm(item["name"]) == target_name
+            for item in candidate_by_id.values()
+        ):
+            break
 
-            option_text = str(option.get("text") or group.get("text") or "")
-            candidate_name = option_text.split("|", 1)[0].strip()
-            candidate_norm = identity_norm(candidate_name)
-            if not candidate_norm:
-                continue
-
-            name_ratio = SequenceMatcher(None, target_name, candidate_norm).ratio()
-            if target_name != candidate_norm and name_ratio < 0.97:
-                continue
-
-            candidate_club = str(payload_data.get("teamName") or "").strip()
-            if not club_name_matches(club_name, candidate_club):
-                continue
-
-            score = 2.0 if target_name == candidate_norm else name_ratio
-            if identity_norm(candidate_club) in identity_norm(club_name) or identity_norm(club_name) in identity_norm(candidate_club):
-                score += 0.5
-            matches.append((score, fotmob_id))
-
-    if not matches:
+    if not candidate_by_id:
         return None
 
-    _, fotmob_id = max(matches, key=lambda item: item[0])
+    verified = []
+    for fotmob_id, candidate in candidate_by_id.items():
+        candidate_name_norm = identity_norm(candidate["name"])
+        name_ratio = candidate["nameRatio"]
+        exact_name = candidate_name_norm == target_name
+
+        pdata = fotmob_player_data(fotmob_id, qa)
+        if not pdata:
+            continue
+
+        pdata_name = identity_norm(pdata.get("name") or candidate["name"])
+        pdata_ratio = SequenceMatcher(None, target_name, pdata_name).ratio()
+        birth = fotmob_birth_date(pdata)
+        primary_team = pdata.get("primaryTeam") or {}
+        primary_team_name = str(primary_team.get("teamName") or candidate["suggestTeam"])
+
+        # Highest-confidence path: same date of birth + related name.
+        if target_dob and birth:
+            if target_dob != birth:
+                continue
+            if max(name_ratio, pdata_ratio) < 0.60:
+                continue
+            score = 5.0 + max(name_ratio, pdata_ratio)
+            if club_name_matches(club_name, primary_team_name):
+                score += 0.5
+            verified.append((score, fotmob_id, "dob"))
+            continue
+
+        # If DOB is unavailable from either source, require exact/near-exact
+        # name plus the same current club. This is intentionally conservative.
+        if not club_name_matches(club_name, primary_team_name):
+            continue
+        if not exact_name and max(name_ratio, pdata_ratio) < 0.97:
+            continue
+        score = 2.0 + max(name_ratio, pdata_ratio)
+        verified.append((score, fotmob_id, "club"))
+
+    if not verified:
+        return None
+
+    _, fotmob_id, verification = max(verified, key=lambda item: item[0])
     qa["fotmobPlayerMatches"] = qa.get("fotmobPlayerMatches", 0) + 1
+    key = "fotmobDobVerified" if verification == "dob" else "fotmobClubVerified"
+    qa[key] = qa.get(key, 0) + 1
     return FOTMOB_PLAYER_IMAGE.format(id=fotmob_id)
 
 
@@ -1163,6 +1248,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "sofaPlayerSearchMatches": 0,
         "fotmobSearchRequests": 0,
         "fotmobPlayerMatches": 0,
+        "fotmobPlayerDataRequests": 0,
+        "fotmobPlayerDataResponses": 0,
+        "fotmobDobVerified": 0,
+        "fotmobClubVerified": 0,
         "fotmobFallbackPhotos": 0,
         "source": "Transfermarkt public JSON API + identity-validated FotMob photo fallback",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
