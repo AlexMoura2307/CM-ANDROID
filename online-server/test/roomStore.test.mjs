@@ -147,7 +147,7 @@ test("sync returns only commands newer than the client's revision", () => {
     clientCommandId: "cmd-1",
     kind: "set_lineup",
     teamId: "sao-paulo",
-    payload: {},
+    payload: { playerIds: ["p1", "p2"] },
   });
   store.submitCommand("a", {
     clientCommandId: "cmd-2",
