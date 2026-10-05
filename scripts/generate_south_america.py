@@ -1165,6 +1165,24 @@ def _country_matches_source(candidate_country: str | None, country_name: str) ->
     return not value or value in wanted
 
 
+def looks_like_affiliate_club_name(name: str) -> bool:
+    text = identity_norm(name)
+    if not text:
+        return False
+    patterns = (
+        r"\b(?:u|sub|under)\s?(17|18|19|20|21|23)\b$",
+        r"\bjuvenil(es)?\b$",
+        r"\byouth\b$",
+        r"\bacademy\b$",
+        r"\breserve(s)?\b$",
+        r"\breserva(s)?\b$",
+        r"\bsecond\s+team\b$",
+        r"\s+b$",
+        r"\s+ii$",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
 def _affiliate_suffix(parent_name: str, candidate_name: str) -> str | None:
     parent = identity_norm(parent_name)
     candidate = identity_norm(candidate_name)
@@ -1244,32 +1262,81 @@ def discover_affiliate_clubs(
     parent_name: str,
     country_name: str,
     qa: dict,
+    name_variants: list[str] | None = None,
 ) -> dict[str, dict | None]:
-    cache_key = (str(parent_club_id), norm(parent_name))
+    variants = []
+    for value in [parent_name, *(name_variants or [])]:
+        text = str(value or "").strip()
+        if text and identity_norm(text) not in {
+            identity_norm(existing) for existing in variants
+        }:
+            variants.append(text)
+
+    cache_key = (
+        str(parent_club_id),
+        "|".join(identity_norm(value) for value in variants),
+    )
     if cache_key in _affiliate_search_cache:
         return _affiliate_search_cache[cache_key]
 
-    try:
-        payload = api_json("/clubs/search/" + quote(parent_name, safe=""))
-    except Exception:
-        result = {"reserve": None, "youth": None}
-        _affiliate_search_cache[cache_key] = result
-        return result
-
     reserves = []
     youths = []
-    for candidate in payload.get("results", []):
-        if not isinstance(candidate, dict) or not candidate.get("id"):
+    seen_ids = set()
+
+    for query_name in variants[:4]:
+        try:
+            first = api_json(
+                "/clubs/search/"
+                + quote(query_name, safe="")
+                + "?page_number=1"
+            )
+        except Exception:
             continue
-        if str(candidate["id"]) == str(parent_club_id):
-            continue
-        if not _country_matches_source(candidate.get("country"), country_name):
-            continue
-        kind = _affiliate_kind(parent_name, candidate)
-        if kind == "reserve":
-            reserves.append(candidate)
-        elif kind == "youth":
-            youths.append(candidate)
+
+        pages = [first]
+        # Affiliate teams often rank just outside the first 10 results. Only
+        # inspect page 2 when necessary to keep the batch bounded.
+        if (
+            int(first.get("lastPageNumber") or 1) > 1
+            and (not reserves or not youths)
+        ):
+            try:
+                pages.append(
+                    api_json(
+                        "/clubs/search/"
+                        + quote(query_name, safe="")
+                        + "?page_number=2"
+                    )
+                )
+            except Exception:
+                pass
+
+        for payload in pages:
+            for candidate in payload.get("results", []):
+                if not isinstance(candidate, dict) or not candidate.get("id"):
+                    continue
+                candidate_id = str(candidate["id"])
+                if candidate_id == str(parent_club_id) or candidate_id in seen_ids:
+                    continue
+                if not _country_matches_source(candidate.get("country"), country_name):
+                    continue
+
+                kind = None
+                for base_name in variants:
+                    kind = _affiliate_kind(base_name, candidate)
+                    if kind:
+                        break
+                if not kind:
+                    continue
+
+                seen_ids.add(candidate_id)
+                if kind == "reserve":
+                    reserves.append(candidate)
+                elif kind == "youth":
+                    youths.append(candidate)
+
+        if reserves and youths:
+            break
 
     reserve = max(
         reserves,
@@ -1608,6 +1675,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "youthPlayersSkippedOver20": 0,
         "youthPlayersSkippedUnknownAge": 0,
         "clubsWithoutYouthSource": [],
+        "affiliateCatalogEntriesExcluded": [],
         "countryCatalogCounts": {},
         "profileFallbackRequests": 0,
         "profileFallbackPhotos": 0,
@@ -1652,9 +1720,27 @@ def generate(country_filter: set[str] | None = None) -> dict:
         raw_clubs = list(competition_clubs)
         if spec.country_code not in expanded_countries:
             country_clubs = all_country_clubs(spec.country_code, country_ids)
-            qa["countryCatalogCounts"][spec.country_code] = len(country_clubs)
-            by_id = {str(club["id"]): club for club in raw_clubs}
+            primary_country_clubs = []
+            competition_ids = {
+                str(club["id"]) for club in competition_clubs if club.get("id")
+            }
             for club in country_clubs:
+                club_id = str(club.get("id") or "")
+                if (
+                    club_id not in competition_ids
+                    and looks_like_affiliate_club_name(club.get("name") or "")
+                ):
+                    qa["affiliateCatalogEntriesExcluded"].append({
+                        "country": spec.country_code,
+                        "id": club_id,
+                        "name": club.get("name"),
+                    })
+                    continue
+                primary_country_clubs.append(club)
+
+            qa["countryCatalogCounts"][spec.country_code] = len(primary_country_clubs)
+            by_id = {str(club["id"]): club for club in raw_clubs}
+            for club in primary_country_clubs:
                 by_id.setdefault(str(club["id"]), club)
             raw_clubs = list(by_id.values())
             expanded_countries.add(spec.country_code)
@@ -1708,6 +1794,11 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 team["name"],
                 spec.country_name,
                 qa,
+                name_variants=[
+                    profile.get("shortName"),
+                    profile.get("name"),
+                    raw_club.get("name"),
+                ],
             )
 
             reserve_players = []
