@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from difflib import SequenceMatcher
 from hashlib import sha256
 from io import BytesIO
 from math import log10
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 import argparse
 import json
 import random
@@ -26,6 +27,7 @@ ROOT = Path("wfe-south-america")
 ASSETS_PLAYERS = ROOT / "assets" / "players" / "by-id"
 ASSETS_CLUBS = ROOT / "assets" / "clubs" / "by-id"
 TM_BASE = "https://transfermarkt-api.fly.dev"
+SOFA_BASE = "https://www.sofascore.com/api/v1"
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
     "Accept": "application/json,text/plain,*/*",
@@ -34,6 +36,7 @@ HTTP_HEADERS = {
 # O endpoint publico usado aqui informa limite de 2 requests a cada 3 segundos.
 # Esta cadencia deixa a geracao previsivel e evita martelar a fonte.
 _last_api_request_at = 0.0
+_last_sofa_request_at = 0.0
 
 
 @dataclass(frozen=True)
@@ -307,6 +310,178 @@ def api_json(path: str) -> dict:
             last_error = exc
             time.sleep(3 + attempt * 3)
     raise RuntimeError(f"Transfermarkt API indisponivel para {url}: {last_error}")
+
+
+def sofa_json(path: str, params: dict | None = None) -> dict:
+    global _last_sofa_request_at
+    wait = 0.35 - (time.monotonic() - _last_sofa_request_at)
+    if wait > 0:
+        time.sleep(wait)
+
+    url = path if path.startswith("http") else SOFA_BASE + path
+    if params:
+        url += ("&" if "?" in url else "?") + urlencode(params)
+
+    headers = dict(HTTP_HEADERS)
+    headers["Referer"] = "https://www.sofascore.com/"
+    last_error = None
+    for attempt in range(3):
+        try:
+            request = urllib.request.Request(url, headers=headers)
+            _last_sofa_request_at = time.monotonic()
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            last_error = exc
+            time.sleep(1.5 + attempt * 2)
+    return {}
+
+
+def identity_norm(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(
+        "".join(ch if ch.isalnum() else " " for ch in text.lower()).split()
+    )
+
+
+def sofa_date_of_birth(player: dict) -> str | None:
+    direct = str(player.get("dateOfBirth") or "").strip()
+    if len(direct) >= 10 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", direct[:10]):
+        return direct[:10]
+
+    timestamp = player.get("dateOfBirthTimestamp")
+    try:
+        if timestamp is not None:
+            return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).date().isoformat()
+    except Exception:
+        pass
+    return None
+
+
+def sofa_entity(entry: dict) -> dict:
+    if not isinstance(entry, dict):
+        return {}
+    entity = entry.get("entity")
+    if isinstance(entity, dict):
+        return entity
+    player = entry.get("player")
+    if isinstance(player, dict):
+        return player
+    return entry
+
+
+def sofa_team_squad(club_name: str, country_code: str, qa: dict) -> list[dict]:
+    payload = sofa_json("/search/teams/", {"q": club_name, "page": 0})
+    candidates = []
+    target = identity_norm(club_name)
+
+    for entry in payload.get("results", []):
+        team = sofa_entity(entry)
+        if not team:
+            continue
+        sport = team.get("sport") or {}
+        if sport and sport.get("id") not in (None, 1):
+            continue
+
+        name = identity_norm(team.get("name") or team.get("shortName"))
+        if not name:
+            continue
+
+        country = team.get("country") or {}
+        alpha2 = str(country.get("alpha2") or "").upper()
+        if alpha2 and alpha2 != country_code:
+            continue
+
+        ratio = SequenceMatcher(None, target, name).ratio()
+        target_tokens = set(target.split())
+        name_tokens = set(name.split())
+        overlap = len(target_tokens & name_tokens) / max(
+            1, min(len(target_tokens), len(name_tokens))
+        )
+        score = max(ratio, overlap)
+        if alpha2 == country_code:
+            score += 0.08
+        candidates.append((score, team))
+
+    if not candidates:
+        return []
+
+    score, team = max(candidates, key=lambda item: item[0])
+    if score < 0.82 or not team.get("id"):
+        return []
+
+    squad_payload = sofa_json(f"/team/{team['id']}/players")
+    raw_entries = squad_payload.get("players", [])
+    squad = [sofa_entity(entry) for entry in raw_entries]
+    squad = [player for player in squad if player.get("id") and player.get("name")]
+    if squad:
+        qa["sofaTeamMatches"] = qa.get("sofaTeamMatches", 0) + 1
+    return squad
+
+
+def match_sofa_player(tm_player: dict, sofa_squad: list[dict]) -> dict | None:
+    target_name = identity_norm(tm_player.get("name"))
+    if not target_name:
+        return None
+    target_dob = str(tm_player.get("dateOfBirth") or "")[:10]
+    target_number = str(tm_player.get("shirtNumber") or "").strip()
+
+    scored = []
+    for candidate in sofa_squad:
+        candidate_name = identity_norm(candidate.get("name"))
+        if not candidate_name:
+            continue
+        ratio = SequenceMatcher(None, target_name, candidate_name).ratio()
+        candidate_dob = sofa_date_of_birth(candidate)
+        candidate_number = str(
+            candidate.get("jerseyNumber") or candidate.get("shirtNumber") or ""
+        ).strip()
+
+        if target_dob and candidate_dob:
+            if target_dob != candidate_dob:
+                continue
+            # Same DOB is strong identity evidence; still require a related name.
+            if ratio >= 0.55:
+                scored.append((1.20 + ratio, candidate))
+            continue
+
+        # Without DOB, demand a very strong name match. Shirt number can only
+        # strengthen a match; it never overrides a weak name.
+        score = ratio
+        if target_number and candidate_number and target_number == candidate_number:
+            score += 0.04
+        if ratio >= 0.94:
+            scored.append((score, candidate))
+
+    if not scored:
+        return None
+    return max(scored, key=lambda item: item[0])[1]
+
+
+def sofa_photo_map(
+    club_name: str,
+    country_code: str,
+    tm_players: list[dict],
+    qa: dict,
+) -> dict[str, str]:
+    # Secondary source is used only to recover missing/unreachable real photos.
+    # Identity is validated within the same club by DOB+name or an extremely
+    # strong name match. The downloaded file is still stored under the TM ID.
+    squad = sofa_team_squad(club_name, country_code, qa)
+    if not squad:
+        return {}
+
+    result = {}
+    for tm_player in tm_players:
+        candidate = match_sofa_player(tm_player, squad)
+        if not candidate:
+            continue
+        result[str(tm_player["id"])] = (
+            f"https://img.sofascore.com/api/v1/player/{candidate['id']}/image"
+        )
+    qa["sofaPlayerMatches"] = qa.get("sofaPlayerMatches", 0) + len(result)
+    return result
 
 
 def image_bytes(url: str) -> bytes | None:
@@ -811,7 +986,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "countryCatalogCounts": {},
         "profileFallbackRequests": 0,
         "profileFallbackPhotos": 0,
-        "source": "Transfermarkt public JSON API",
+        "sofaTeamMatches": 0,
+        "sofaPlayerMatches": 0,
+        "sofaFallbackPhotos": 0,
+        "source": "Transfermarkt public JSON API + identity-validated SofaScore photo fallback",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
     }
 
@@ -878,13 +1056,15 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 if isinstance(p, dict) and p.get("id")
             ]
 
-            # O endpoint de elenco nem sempre traz imageUrl, especialmente em
-            # divisões menores. Busca o perfil PELO MESMO ID apenas nesses casos.
-            # Isso aumenta a cobertura sem usar nome como chave de foto.
-            raw_players = [
-                enrich_missing_player_photo(player, qa)
-                for player in raw_players
-            ]
+            # O endpoint de elenco já traz os dados reais principais. Para fotos
+            # ausentes usamos uma segunda fonte por clube, com validação forte de
+            # identidade; não fazemos associação apenas pelo nome global.
+            sofa_photos = sofa_photo_map(
+                team["name"],
+                spec.country_code,
+                raw_players,
+                qa,
+            )
 
             if len(raw_players) < 14:
                 qa["rosterWarnings"].append({
@@ -895,17 +1075,24 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 })
 
             # Fotos do clube em paralelo; a identidade continua sendo o ID TM.
-            def _photo_job(p: dict) -> tuple[str, str | None]:
+            def _photo_job(p: dict) -> tuple[str, str | None, str | None]:
                 pid = f"tm-player-{p['id']}"
                 path = download_asset(pid, p.get("imageUrl"), ASSETS_PLAYERS)
-                return pid, path
+                source = "transfermarkt" if path else None
+                if not path:
+                    fallback_url = sofa_photos.get(str(p["id"]))
+                    path = download_asset(pid, fallback_url, ASSETS_PLAYERS)
+                    source = "sofascore" if path else None
+                return pid, path, source
 
             photo_paths: dict[str, str | None] = {}
             with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = [pool.submit(_photo_job, p) for p in raw_players]
                 for future in as_completed(futures):
-                    pid, ppath = future.result()
+                    pid, ppath, source = future.result()
                     photo_paths[pid] = ppath
+                    if source == "sofascore":
+                        qa["sofaFallbackPhotos"] = qa.get("sofaFallbackPhotos", 0) + 1
 
             for raw_player in raw_players:
                 pid = f"tm-player-{raw_player['id']}"
