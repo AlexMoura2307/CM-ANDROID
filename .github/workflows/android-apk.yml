@@ -1,20 +1,25 @@
-name: Build WFE Android APK
+name: Build CM Android APK
+
+permissions:
+  contents: read
+  actions: read
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/android-apk.yml"
-      - "scripts/prepare_cm.py"
-      - "scripts/generate_brazil_fase1.py"
-      - "overrides/**"
-      - "README.md"
+    inputs:
+      south_america_run_id:
+        description: "Successful Build CM South America OFM run id"
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["Build CM South America OFM"]
+    types: [completed]
 
 jobs:
   build-android:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout WFE build repo
@@ -27,8 +32,20 @@ jobs:
           ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
           path: upstream
 
-      - name: Prepare WFE customizations
-        run: python3 scripts/prepare_cm.py
+      - name: Download consolidated South America OFM
+        uses: actions/download-artifact@v4
+        with:
+          name: CM-South-America-2026
+          path: final-data
+          run-id: ${{ github.event.workflow_run.id || inputs.south_america_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CM customizations
+        run: |
+          python3 scripts/prepare_cm.py
+          python3 scripts/prepare_cm_south_america.py
+          mkdir -p upstream/src-tauri/resources
+          cp final-data/CM_SOUTH_AMERICA_2026.ofm upstream/src-tauri/resources/cm-south-america-2026.ofm
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -68,16 +85,10 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      - name: Generate embedded WFE Brasil database
-        shell: bash
-        run: |
-          python3 scripts/generate_brazil_fase1.py
-          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate wfe-brasil-fase1
-          mkdir -p upstream/src-tauri/resources
-          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-brasil-fase1 --output upstream/src-tauri/resources/wfe-brasil-2026-fase1.ofm
-          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/wfe-brasil-2026-fase1.ofm
+      - name: Verify embedded South America database
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/cm-south-america-2026.ofm
 
-      - name: Generate WFE app icons
+      - name: Generate CM app icons
         working-directory: upstream
         run: npm run tauri icon public/wfe-app-icon.svg
 
@@ -180,10 +191,10 @@ jobs:
           fi
           echo "apk_dir=$APK_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Upload WFE APK
+      - name: Upload CM Teste 4 APK
         uses: actions/upload-artifact@v4
         with:
-          name: WFE-Android-APK
+          name: CM-Teste-4-Android-APK
           path: ${{ steps.apk.outputs.apk_dir }}/*.apk
           if-no-files-found: error
           retention-days: 14
