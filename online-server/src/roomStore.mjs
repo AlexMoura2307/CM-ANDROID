@@ -54,6 +54,21 @@ function plusOneDay(isoDate) {
   return date.toISOString().slice(0, 10);
 }
 
+function defaultClubState(teamId) {
+  return {
+    teamId,
+    lineup: [],
+    tactics: null,
+    training: null,
+    staffAssignments: {},
+    revision: 0,
+  };
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function publicMember(member) {
   return {
     id: member.id,
@@ -84,6 +99,7 @@ export class RoomStore {
         startedAt: room.startedAt,
         createdAt: room.createdAt,
         commands: room.commands,
+        clubStates: [...room.clubStates.entries()],
         members: [...room.members.values()].map((member) => ({
           ...member,
           connected: false,
@@ -129,6 +145,24 @@ export class RoomStore {
         ownerMemberId = [...members.keys()][0];
       }
 
+      const clubStates = new Map(
+        Array.isArray(rawRoom.clubStates)
+          ? rawRoom.clubStates.map(([teamId, state]) => [
+              String(teamId),
+              {
+                ...defaultClubState(String(teamId)),
+                ...(state && typeof state === "object" ? state : {}),
+                teamId: String(teamId),
+              },
+            ])
+          : [],
+      );
+      for (const member of members.values()) {
+        if (!clubStates.has(member.teamId)) {
+          clubStates.set(member.teamId, defaultClubState(member.teamId));
+        }
+      }
+
       this.rooms.set(code, {
         code,
         revision: Math.max(0, Number(rawRoom.revision) || 0),
@@ -141,6 +175,7 @@ export class RoomStore {
         phase: rawRoom.phase === "active" ? "active" : "lobby",
         startedAt: rawRoom.startedAt ? Number(rawRoom.startedAt) : null,
         members,
+        clubStates,
         commands: Array.isArray(rawRoom.commands) ? rawRoom.commands.slice(-5000) : [],
         createdAt: Number(rawRoom.createdAt) || Date.now(),
       });
@@ -179,6 +214,7 @@ export class RoomStore {
       phase: "lobby",
       startedAt: null,
       members: new Map([[member.id, member]]),
+      clubStates: new Map([[member.teamId, defaultClubState(member.teamId)]]),
       commands: [],
       createdAt: Date.now(),
     };
@@ -215,6 +251,9 @@ export class RoomStore {
       joinedAt: Date.now(),
     };
     room.members.set(member.id, member);
+    if (!room.clubStates.has(member.teamId)) {
+      room.clubStates.set(member.teamId, defaultClubState(member.teamId));
+    }
     room.revision += 1;
     return { room, member };
   }
@@ -251,7 +290,11 @@ export class RoomStore {
       : 0;
     return {
       ...found,
-      commands: found.room.commands.filter((entry) => entry.revision > revision),
+      commands: found.room.commands.filter(
+        (entry) =>
+          entry.revision > revision &&
+          entry.memberId === found.member.id,
+      ),
     };
   }
 
@@ -332,6 +375,40 @@ export class RoomStore {
       throw new Error("command_payload_too_large");
     }
 
+    const clubState = found.room.clubStates.get(found.member.teamId);
+    if (!clubState) throw new Error("managed_club_state_missing");
+
+    if (kind === "set_lineup") {
+      const playerIds = command.payload?.playerIds;
+      if (!Array.isArray(playerIds) || playerIds.length > 30) {
+        throw new Error("invalid_lineup_payload");
+      }
+      const clean = playerIds.map((id) => String(id || "").trim());
+      if (clean.some((id) => !id) || new Set(clean).size !== clean.length) {
+        throw new Error("invalid_lineup_payload");
+      }
+      clubState.lineup = clean;
+      clubState.revision += 1;
+    } else if (kind === "set_tactics") {
+      if (!command.payload || typeof command.payload !== "object" || Array.isArray(command.payload)) {
+        throw new Error("invalid_tactics_payload");
+      }
+      clubState.tactics = cloneJson(command.payload);
+      clubState.revision += 1;
+    } else if (kind === "set_training") {
+      if (!command.payload || typeof command.payload !== "object" || Array.isArray(command.payload)) {
+        throw new Error("invalid_training_payload");
+      }
+      clubState.training = cloneJson(command.payload);
+      clubState.revision += 1;
+    } else if (kind === "set_staff_assignment") {
+      const staffId = String(command.payload?.staffId || "").trim();
+      const assignment = String(command.payload?.assignment || "").trim();
+      if (!staffId || !assignment) throw new Error("invalid_staff_assignment_payload");
+      clubState.staffAssignments[staffId] = assignment;
+      clubState.revision += 1;
+    }
+
     const entry = {
       id: crypto.randomUUID(),
       memberId: found.member.id,
@@ -396,6 +473,17 @@ export class RoomStore {
       found.room.ownerMemberId = next.id;
     }
     return { room: found.room, member: found.member, deleted: false };
+  }
+
+  privateState(room, memberId) {
+    const member = room.members.get(memberId);
+    if (!member) throw new Error("member_not_found");
+    return {
+      ...this.publicState(room),
+      myClubState: cloneJson(
+        room.clubStates.get(member.teamId) || defaultClubState(member.teamId),
+      ),
+    };
   }
 
   publicState(room) {
