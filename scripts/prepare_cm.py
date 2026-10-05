@@ -139,6 +139,35 @@ for locale_path in locales_dir.glob("*.json"):
     data.setdefault("app", {})["publisher"] = "World Football Empire"
     locale_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+# Regra CM: treinador humano precisa ter no minimo 18 anos.
+# Mantemos frontend e backend com a mesma validacao; o upstream usa 30.
+main_menu_path = root / "src" / "pages" / "MainMenu.tsx"
+main_menu = main_menu_path.read_text(encoding="utf-8")
+if "const MANAGER_MINIMUM_AGE = 30;" not in main_menu:
+    raise RuntimeError("MANAGER_MINIMUM_AGE upstream marker not found")
+main_menu = main_menu.replace(
+    "const MANAGER_MINIMUM_AGE = 30;",
+    "const MANAGER_MINIMUM_AGE = 18;",
+    1,
+)
+main_menu_path.write_text(main_menu, encoding="utf-8")
+
+game_mod_path = root / "src-tauri" / "src" / "commands" / "game" / "mod.rs"
+game_mod = game_mod_path.read_text(encoding="utf-8")
+if "if age < 30 {" not in game_mod:
+    raise RuntimeError("backend manager minimum age marker not found")
+game_mod = game_mod.replace("if age < 30 {", "if age < 18 {", 1)
+game_mod_path.write_text(game_mod, encoding="utf-8")
+
+mcp_format_path = root / "src-tauri" / "src" / "mcp_server" / "formatting.rs"
+mcp_format = mcp_format_path.read_text(encoding="utf-8")
+mcp_format = mcp_format.replace(
+    '"be.error.createManager.minAge" => "Manager must be at least 30 years old.".to_string(),',
+    '"be.error.createManager.minAge" => "Manager must be at least 18 years old.".to_string(),',
+    1,
+)
+mcp_format_path.write_text(mcp_format, encoding="utf-8")
+
 # Título da janela
 app_path = root / "src" / "App.tsx"
 app = app_path.read_text(encoding="utf-8")
