@@ -76,6 +76,7 @@ jobs:
         run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info CM_SOUTH_AMERICA_2026.ofm
 
       - name: Upload QA report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CM-South-America-QA
