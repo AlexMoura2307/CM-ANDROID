@@ -47,68 +47,69 @@ class CompetitionSpec:
     legs: int
     min_clubs: int
     division: int = 1
+    source_id: str | None = None
 
 
 COMPETITIONS: tuple[CompetitionSpec, ...] = (
     CompetitionSpec(
         "arg-primera", "AR", "Argentina", "Liga Profesional Argentina",
         ("Liga Profesional", "Primera Division Argentina", "Primera División Argentina"),
-        10, 2, 20,
+        10, 2, 20, 1, "ARG1",
     ),
     CompetitionSpec(
         "bol-primera", "BO", "Bolivia", "Division Profesional Bolivia",
         ("Division Profesional", "División Profesional", "Primera Division Bolivia"),
-        10, 2, 14,
+        10, 2, 14, 1, "BO1A",
     ),
     CompetitionSpec(
         "bra-serie-a", "BR", "Brazil", "Campeonato Brasileiro Serie A",
         ("Campeonato Brasileiro Serie A", "Brasileirao Serie A", "Brasileirão Série A"),
-        10, 2, 18,
+        10, 2, 18, 1, "BRA1",
     ),
     CompetitionSpec(
         "bra-serie-b", "BR", "Brazil", "Campeonato Brasileiro Serie B",
         ("Campeonato Brasileiro Serie B", "Brasileirao Serie B", "Brasileirão Série B"),
-        20, 2, 18, 2,
+        20, 2, 18, 2, "BRA2",
     ),
     CompetitionSpec(
         "bra-serie-c", "BR", "Brazil", "Campeonato Brasileiro Serie C",
         ("Campeonato Brasileiro Serie C", "Brasileirao Serie C", "Brasileirão Série C"),
-        30, 1, 18, 3,
+        30, 1, 18, 3, "BRA3",
     ),
     CompetitionSpec(
         "chi-primera", "CL", "Chile", "Primera Division de Chile",
         ("Primera Division de Chile", "Primera División de Chile", "Primera Division Chile"),
-        10, 2, 14,
+        10, 2, 14, 1, "CLPD",
     ),
     CompetitionSpec(
         "col-primera-a", "CO", "Colombia", "Primera A Colombia",
         ("Primera A Colombia", "Liga Dimayor", "Categoria Primera A"),
-        10, 2, 18,
+        10, 2, 18, 1, "COLP",
     ),
     CompetitionSpec(
         "ecu-serie-a", "EC", "Ecuador", "LigaPro Serie A",
         ("LigaPro Serie A", "Serie A Ecuador", "Primera Etapa Ecuador"),
-        10, 2, 14,
+        10, 2, 14, 1, "EC1N",
     ),
     CompetitionSpec(
         "par-primera", "PY", "Paraguay", "Primera Division Paraguay",
         ("Primera Division Paraguay", "Primera División Paraguay", "Division Profesional Paraguay"),
-        10, 2, 10,
+        10, 2, 10, 1, "PR1A",
     ),
     CompetitionSpec(
         "per-liga-1", "PE", "Peru", "Liga 1 Peru",
         ("Liga 1 Peru", "Liga 1", "Primera Division Peru"),
-        10, 2, 16,
+        10, 2, 16, 1, "TDeA",
     ),
     CompetitionSpec(
         "uru-primera", "UY", "Uruguay", "Primera Division Uruguay",
         ("Primera Division Uruguay", "Primera División Uruguay", "Liga AUF Uruguaya"),
-        10, 2, 14,
+        10, 2, 14, 1, "URU1",
     ),
     CompetitionSpec(
         "ven-primera", "VE", "Venezuela", "Liga FUTVE",
         ("Liga FUTVE", "Primera Division Venezuela", "Primera División Venezuela"),
-        10, 2, 12,
+        10, 2, 12, 1, "VZ1A",
     ),
 )
 
@@ -489,6 +490,12 @@ def fm_style_attributes(
 
 
 def resolve_competition(spec: CompetitionSpec) -> dict:
+    # IDs oficiais do Transfermarkt sao preferidos: evitam confundir Apertura,
+    # Clausura, copa da liga ou nomes antigos da mesma competicao.
+    if spec.source_id:
+        print(f"[competition] {spec.key}: {spec.display_name} [{spec.source_id}]")
+        return {"id": spec.source_id, "name": spec.display_name}
+
     wanted_countries = COUNTRY_ALIASES.get(norm(spec.country_name), {norm(spec.country_name)})
     best = None
     best_score = -1.0
