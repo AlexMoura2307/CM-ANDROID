@@ -14,6 +14,7 @@ import json
 import random
 import re
 import shutil
+import threading
 import time
 import unicodedata
 import urllib.request
@@ -37,6 +38,7 @@ HTTP_HEADERS = {
 # Esta cadencia deixa a geracao previsivel e evita martelar a fonte.
 _last_api_request_at = 0.0
 _last_sofa_request_at = 0.0
+_sofa_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -314,9 +316,6 @@ def api_json(path: str) -> dict:
 
 def sofa_json(path: str, params: dict | None = None) -> dict:
     global _last_sofa_request_at
-    wait = 0.35 - (time.monotonic() - _last_sofa_request_at)
-    if wait > 0:
-        time.sleep(wait)
 
     url = path if path.startswith("http") else SOFA_BASE + path
     if params:
@@ -324,16 +323,22 @@ def sofa_json(path: str, params: dict | None = None) -> dict:
 
     headers = dict(HTTP_HEADERS)
     headers["Referer"] = "https://www.sofascore.com/"
-    last_error = None
-    for attempt in range(3):
-        try:
-            request = urllib.request.Request(url, headers=headers)
-            _last_sofa_request_at = time.monotonic()
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            last_error = exc
-            time.sleep(1.5 + attempt * 2)
+
+    # Serialize SofaScore requests even when player images are processed in a
+    # thread pool. This keeps the fallback polite and prevents burst failures.
+    with _sofa_lock:
+        wait = 0.35 - (time.monotonic() - _last_sofa_request_at)
+        if wait > 0:
+            time.sleep(wait)
+
+        for attempt in range(3):
+            try:
+                request = urllib.request.Request(url, headers=headers)
+                _last_sofa_request_at = time.monotonic()
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception:
+                time.sleep(1.5 + attempt * 2)
     return {}
 
 
@@ -457,6 +462,71 @@ def match_sofa_player(tm_player: dict, sofa_squad: list[dict]) -> dict | None:
     if not scored:
         return None
     return max(scored, key=lambda item: item[0])[1]
+
+
+def sofa_player_search_photo(
+    tm_player: dict,
+    club_name: str,
+    country_code: str,
+    qa: dict,
+) -> str | None:
+    name = str(tm_player.get("name") or "").strip()
+    if not name:
+        return None
+
+    qa["sofaPlayerSearchRequests"] = qa.get("sofaPlayerSearchRequests", 0) + 1
+    payload = sofa_json("/search/players/" + quote(name.lower(), safe=""))
+    candidates = payload.get("players", [])
+    if not isinstance(candidates, list):
+        return None
+
+    target_name = identity_norm(name)
+    target_dob = str(tm_player.get("dateOfBirth") or "")[:10]
+    target_club = identity_norm(club_name)
+
+    matches = []
+    for entry in candidates:
+        candidate = sofa_entity(entry)
+        if not candidate or not candidate.get("id"):
+            continue
+
+        candidate_name = identity_norm(candidate.get("name"))
+        if not candidate_name:
+            continue
+        name_ratio = SequenceMatcher(None, target_name, candidate_name).ratio()
+        if name_ratio < 0.90:
+            continue
+
+        candidate_dob = sofa_date_of_birth(candidate)
+        candidate_team = candidate.get("team") or {}
+        candidate_team_name = identity_norm(
+            candidate_team.get("name") or candidate_team.get("shortName")
+        )
+        team_ratio = (
+            SequenceMatcher(None, target_club, candidate_team_name).ratio()
+            if target_club and candidate_team_name
+            else 0.0
+        )
+
+        # DOB match is the strongest identity check. Without DOB, require an
+        # almost-exact name AND a reasonably matching club.
+        if target_dob and candidate_dob:
+            if target_dob != candidate_dob:
+                continue
+            score = 2.0 + name_ratio + team_ratio * 0.25
+        else:
+            if name_ratio < 0.97 or team_ratio < 0.68:
+                continue
+            score = name_ratio + team_ratio
+
+        matches.append((score, candidate))
+
+    if not matches:
+        return None
+
+    _, candidate = max(matches, key=lambda item: item[0])
+    qa["sofaPlayerSearchMatches"] = qa.get("sofaPlayerSearchMatches", 0) + 1
+    return f"https://img.sofascore.com/api/v1/player/{candidate['id']}/image"
 
 
 def sofa_photo_map(
@@ -989,6 +1059,8 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "sofaTeamMatches": 0,
         "sofaPlayerMatches": 0,
         "sofaFallbackPhotos": 0,
+        "sofaPlayerSearchRequests": 0,
+        "sofaPlayerSearchMatches": 0,
         "source": "Transfermarkt public JSON API + identity-validated SofaScore photo fallback",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
     }
@@ -1081,6 +1153,13 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 source = "transfermarkt" if path else None
                 if not path:
                     fallback_url = sofa_photos.get(str(p["id"]))
+                    if not fallback_url:
+                        fallback_url = sofa_player_search_photo(
+                            p,
+                            team["name"],
+                            spec.country_code,
+                            qa,
+                        )
                     path = download_asset(pid, fallback_url, ASSETS_PLAYERS)
                     source = "sofascore" if path else None
                 return pid, path, source
