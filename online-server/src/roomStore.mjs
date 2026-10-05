@@ -17,6 +17,8 @@ const MARKET_COMMANDS = new Set([
   "transfer_offer",
   "loan_offer",
   "free_agent_offer",
+  "respond_transfer_offer",
+  "respond_loan_offer",
 ]);
 
 const ALLOWED_COMMANDS = new Set([...OWN_CLUB_COMMANDS, ...MARKET_COMMANDS]);
@@ -99,6 +101,7 @@ export class RoomStore {
         startedAt: room.startedAt,
         createdAt: room.createdAt,
         commands: room.commands,
+        pendingOffers: room.pendingOffers,
         clubStates: [...room.clubStates.entries()],
         members: [...room.members.values()].map((member) => ({
           ...member,
@@ -176,6 +179,9 @@ export class RoomStore {
         startedAt: rawRoom.startedAt ? Number(rawRoom.startedAt) : null,
         members,
         clubStates,
+        pendingOffers: Array.isArray(rawRoom.pendingOffers)
+          ? rawRoom.pendingOffers.slice(-2000)
+          : [],
         commands: Array.isArray(rawRoom.commands) ? rawRoom.commands.slice(-5000) : [],
         createdAt: Number(rawRoom.createdAt) || Date.now(),
       });
@@ -215,6 +221,7 @@ export class RoomStore {
       startedAt: null,
       members: new Map([[member.id, member]]),
       clubStates: new Map([[member.teamId, defaultClubState(member.teamId)]]),
+      pendingOffers: [],
       commands: [],
       createdAt: Date.now(),
     };
@@ -412,6 +419,60 @@ export class RoomStore {
       clubState.revision += 1;
     }
 
+    if (kind === "transfer_offer" || kind === "loan_offer") {
+      const playerId = String(command.payload?.playerId || "").trim();
+      const targetClubId = String(command.payload?.targetClubId || "").trim();
+      const amount = Number(command.payload?.amount ?? 0);
+      if (!playerId || !targetClubId || targetClubId === found.member.teamId) {
+        throw new Error("invalid_market_offer_payload");
+      }
+      if (!Number.isFinite(amount) || amount < 0 || amount > 2_000_000_000) {
+        throw new Error("invalid_market_offer_amount");
+      }
+
+      const targetMember = [...found.room.members.values()].find(
+        (member) => member.teamId === targetClubId,
+      );
+      const offer = {
+        id: crypto.randomUUID(),
+        type: kind === "loan_offer" ? "loan" : "transfer",
+        playerId,
+        fromTeamId: found.member.teamId,
+        toTeamId: targetClubId,
+        amount: Math.round(amount),
+        status: "pending",
+        createdAt: Date.now(),
+        createdByMemberId: found.member.id,
+        targetHumanMemberId: targetMember?.id || null,
+      };
+      found.room.pendingOffers.push(offer);
+      if (found.room.pendingOffers.length > 2000) {
+        found.room.pendingOffers.splice(0, 250);
+      }
+    } else if (kind === "respond_transfer_offer" || kind === "respond_loan_offer") {
+      const offerId = String(command.payload?.offerId || "").trim();
+      const decision = String(command.payload?.decision || "").trim().toLowerCase();
+      if (!offerId || !["accept", "reject"].includes(decision)) {
+        throw new Error("invalid_market_offer_response");
+      }
+
+      const offer = found.room.pendingOffers.find((item) => item.id === offerId);
+      if (!offer || offer.status !== "pending") {
+        throw new Error("market_offer_not_pending");
+      }
+      const expectedType = kind === "respond_loan_offer" ? "loan" : "transfer";
+      if (offer.type !== expectedType) {
+        throw new Error("market_offer_type_mismatch");
+      }
+      if (offer.toTeamId !== found.member.teamId) {
+        throw new Error("only_owner_club_can_answer_offer");
+      }
+
+      offer.status = decision === "accept" ? "accepted" : "rejected";
+      offer.respondedAt = Date.now();
+      offer.respondedByMemberId = found.member.id;
+    }
+
     const entry = {
       id: crypto.randomUUID(),
       memberId: found.member.id,
@@ -487,6 +548,12 @@ export class RoomStore {
       ...this.publicState(room),
       myClubState: cloneJson(
         room.clubStates.get(member.teamId) || defaultClubState(member.teamId),
+      ),
+      incomingOffers: cloneJson(
+        room.pendingOffers.filter((offer) => offer.toTeamId === member.teamId),
+      ),
+      outgoingOffers: cloneJson(
+        room.pendingOffers.filter((offer) => offer.fromTeamId === member.teamId),
       ),
     };
   }
