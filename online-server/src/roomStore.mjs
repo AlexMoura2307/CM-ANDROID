@@ -34,6 +34,7 @@ export class RoomStore {
     const member = {
       id: crypto.randomUUID(),
       connectionId,
+      resumeToken: crypto.randomBytes(24).toString("base64url"),
       managerName: sanitizeManagerName(managerName),
       teamId: sanitizeTeamId(teamId),
       ready: false,
@@ -69,6 +70,7 @@ export class RoomStore {
     const member = {
       id: crypto.randomUUID(),
       connectionId,
+      resumeToken: crypto.randomBytes(24).toString("base64url"),
       managerName: sanitizeManagerName(managerName),
       teamId: normalizedTeamId,
       ready: false,
@@ -83,6 +85,38 @@ export class RoomStore {
 
   getRoom(code) {
     return this.rooms.get(String(code || "").trim().toUpperCase()) || null;
+  }
+
+  resumeSession({ connectionId, resumeToken }) {
+    const token = String(resumeToken || "").trim();
+    if (!token) throw new Error("invalid_resume_token");
+
+    for (const room of this.rooms.values()) {
+      for (const member of room.members.values()) {
+        if (member.resumeToken !== token) continue;
+        if (member.connected && member.connectionId !== connectionId) {
+          throw new Error("session_already_connected");
+        }
+        member.connectionId = connectionId;
+        member.connected = true;
+        member.advanceReady = false;
+        room.revision += 1;
+        return { room, member };
+      }
+    }
+    throw new Error("resume_session_not_found");
+  }
+
+  syncSince(connectionId, afterRevision = 0) {
+    const found = this.findMembership(connectionId);
+    if (!found) throw new Error("not_in_room");
+    const revision = Number.isFinite(Number(afterRevision))
+      ? Math.max(0, Math.floor(Number(afterRevision)))
+      : 0;
+    return {
+      ...found,
+      commands: found.room.commands.filter((entry) => entry.revision > revision),
+    };
   }
 
   findMembership(connectionId) {
@@ -109,6 +143,18 @@ export class RoomStore {
       throw new Error("invalid_command");
     }
 
+    const clientCommandId = String(command.clientCommandId || "").trim().slice(0, 128);
+    if (!clientCommandId) throw new Error("missing_client_command_id");
+
+    const duplicate = found.room.commands.find(
+      (entry) =>
+        entry.memberId === found.member.id &&
+        entry.clientCommandId === clientCommandId,
+    );
+    if (duplicate) {
+      return { ...found, entry: duplicate, duplicate: true };
+    }
+
     const scopeTeamId = String(command.teamId || "");
     if (scopeTeamId && scopeTeamId !== found.member.teamId) {
       throw new Error("forbidden_team_scope");
@@ -118,7 +164,7 @@ export class RoomStore {
       id: crypto.randomUUID(),
       memberId: found.member.id,
       managerTeamId: found.member.teamId,
-      clientCommandId: String(command.clientCommandId || "").slice(0, 128),
+      clientCommandId,
       kind: String(command.kind || "").slice(0, 80),
       payload: command.payload ?? null,
       receivedAt: Date.now(),
@@ -129,7 +175,7 @@ export class RoomStore {
     found.room.commands.push(entry);
     if (found.room.commands.length > 5000) found.room.commands.splice(0, 1000);
     found.room.revision = entry.revision;
-    return { ...found, entry };
+    return { ...found, entry, duplicate: false };
   }
 
   markAdvanceReady(connectionId, ready) {
