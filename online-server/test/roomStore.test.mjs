@@ -239,3 +239,54 @@ test("online room exposes the database fingerprint used by every human", () => {
     "south-america-2026:abc123",
   );
 });
+
+
+test("multiplayer room snapshot survives server restart and can be resumed", () => {
+  const firstStore = new RoomStore();
+  const { room, member } = firstStore.createRoom({
+    connectionId: "before-restart",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+    startDate: "2026-04-01",
+    worldFingerprint: "south-america-2026:abc123",
+  });
+
+  firstStore.setReady("before-restart", true);
+  firstStore.submitCommand("before-restart", {
+    clientCommandId: "persisted-command",
+    kind: "set_tactics",
+    teamId: "sao-paulo",
+    payload: { mentality: "balanced" },
+  });
+
+  const snapshot = firstStore.serializeSnapshot();
+  const secondStore = new RoomStore(snapshot);
+  const restoredRoom = secondStore.getRoom(room.code);
+
+  assert.ok(restoredRoom);
+  assert.equal(restoredRoom.currentDate, "2026-04-01");
+  assert.equal(restoredRoom.worldFingerprint, "south-america-2026:abc123");
+  assert.equal(restoredRoom.commands.length, 1);
+
+  const restoredMember = [...restoredRoom.members.values()][0];
+  assert.equal(restoredMember.connected, false);
+  assert.equal(restoredMember.ready, false);
+
+  const resumed = secondStore.resumeSession({
+    connectionId: "after-restart",
+    resumeToken: member.resumeToken,
+  });
+  assert.equal(resumed.member.id, member.id);
+  assert.equal(resumed.member.teamId, "sao-paulo");
+
+  const sync = secondStore.syncSince("after-restart", 0);
+  assert.equal(sync.commands.length, 1);
+  assert.equal(sync.commands[0].clientCommandId, "persisted-command");
+});
+
+test("invalid multiplayer snapshot is rejected", () => {
+  assert.throws(
+    () => new RoomStore({ version: 999, rooms: [] }),
+    /invalid_room_snapshot/,
+  );
+});
