@@ -25,3 +25,51 @@ src = src.replace("wfe-brasil-2026-fase1.ofm", "cm-south-america-2026.ofm")
 world_path.write_text(src, encoding="utf-8")
 
 print("CM Teste 4 configured for consolidated South America package")
+
+
+# Final CM branding. The base customization script still contains legacy WFE
+# labels; the CM integration pass removes those from the shipped Teste 4 UI.
+cm_logo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="CM">
+  <rect width="1200" height="360" rx="46" fill="#101a33"/>
+  <circle cx="190" cy="180" r="118" fill="#ffffff"/>
+  <text x="190" y="222" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="130" fill="#101a33">CM</text>
+  <text x="362" y="205" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="146" fill="#ffffff">CM</text>
+  <text x="370" y="275" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="34" fill="#a9b4ca" letter-spacing="10">CLUBE MANAGER</text>
+</svg>
+"""
+cm_icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#101a33"/>
+  <circle cx="512" cy="512" r="330" fill="#ffffff"/>
+  <text x="512" y="610" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="300" fill="#101a33">CM</text>
+</svg>
+"""
+(root / "public" / "cm-logo.svg").write_text(cm_logo, encoding="utf-8")
+(root / "public" / "cm-app-icon.svg").write_text(cm_icon, encoding="utf-8")
+
+replacements = {
+    root / "src" / "App.tsx": [
+        ("WFE - World Football Empire", "CM - Clube Manager"),
+    ],
+    root / "src" / "main.tsx": [
+        ("WFE - World Football Empire", "CM - Clube Manager"),
+    ],
+    root / "index.html": [
+        ("WFE - World Football Empire", "CM - Clube Manager"),
+        ('href="/wfe-app-icon.svg"', 'href="/cm-app-icon.svg"'),
+    ],
+    root / "src" / "pages" / "MainMenu.tsx": [
+        ('src="/wfe-logo.svg"', 'src="/cm-logo.svg"'),
+    ],
+    root / "src" / "components" / "dashboard" / "DashboardSidebar.tsx": [
+        ('src="/wfe-app-icon.svg"', 'src="/cm-app-icon.svg"'),
+    ],
+}
+for file_path, pairs in replacements.items():
+    if not file_path.exists():
+        continue
+    file_src = file_path.read_text(encoding="utf-8")
+    for old, new in pairs:
+        file_src = file_src.replace(old, new)
+    file_path.write_text(file_src, encoding="utf-8")
+
+print("CM branding applied")
