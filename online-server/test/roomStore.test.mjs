@@ -596,3 +596,174 @@ test("a disconnected human blocks day advancement until reconnecting", () => {
   assert.equal(room.dayRevision, 1);
   assert.equal(host.teamId, "sao-paulo");
 });
+
+
+test("human transfer offer is private to source and target clubs", () => {
+  const store = new RoomStore();
+  const { room, member: sp } = store.createRoom({
+    connectionId: "sp",
+    managerName: "SP Manager",
+    teamId: "sao-paulo",
+  });
+  const { member: fla } = store.joinRoom({
+    code: room.code,
+    connectionId: "fla",
+    managerName: "Fla Manager",
+    teamId: "flamengo",
+  });
+  const { member: pal } = store.joinRoom({
+    code: room.code,
+    connectionId: "pal",
+    managerName: "Pal Manager",
+    teamId: "palmeiras",
+  });
+
+  store.submitCommand("sp", {
+    clientCommandId: "offer-1",
+    kind: "transfer_offer",
+    teamId: "sao-paulo",
+    payload: {
+      playerId: "player-fla-9",
+      targetClubId: "flamengo",
+      amount: 12000000,
+    },
+  });
+
+  const spState = store.privateState(room, sp.id);
+  const flaState = store.privateState(room, fla.id);
+  const palState = store.privateState(room, pal.id);
+
+  assert.equal(spState.outgoingOffers.length, 1);
+  assert.equal(spState.incomingOffers.length, 0);
+  assert.equal(flaState.incomingOffers.length, 1);
+  assert.equal(flaState.outgoingOffers.length, 0);
+  assert.equal(palState.incomingOffers.length, 0);
+  assert.equal(palState.outgoingOffers.length, 0);
+  assert.equal("pendingOffers" in store.publicState(room), false);
+});
+
+test("only the club that owns the target side can answer a human transfer offer", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "sp",
+    managerName: "SP Manager",
+    teamId: "sao-paulo",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "fla",
+    managerName: "Fla Manager",
+    teamId: "flamengo",
+  });
+
+  store.submitCommand("sp", {
+    clientCommandId: "offer-2",
+    kind: "transfer_offer",
+    teamId: "sao-paulo",
+    payload: {
+      playerId: "player-fla-10",
+      targetClubId: "flamengo",
+      amount: 8000000,
+    },
+  });
+  const offerId = store.findMembership("sp").room.pendingOffers[0].id;
+
+  assert.throws(
+    () =>
+      store.submitCommand("sp", {
+        clientCommandId: "illegal-answer",
+        kind: "respond_transfer_offer",
+        teamId: "sao-paulo",
+        payload: { offerId, decision: "accept" },
+      }),
+    /only_owner_club_can_answer_offer/,
+  );
+
+  store.submitCommand("fla", {
+    clientCommandId: "valid-answer",
+    kind: "respond_transfer_offer",
+    teamId: "flamengo",
+    payload: { offerId, decision: "reject" },
+  });
+
+  assert.equal(room.pendingOffers[0].status, "rejected");
+  assert.ok(room.pendingOffers[0].respondedAt);
+});
+
+test("loan offer cannot be answered through transfer response command", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "sp",
+    managerName: "SP Manager",
+    teamId: "sao-paulo",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "fla",
+    managerName: "Fla Manager",
+    teamId: "flamengo",
+  });
+
+  store.submitCommand("sp", {
+    clientCommandId: "loan-1",
+    kind: "loan_offer",
+    teamId: "sao-paulo",
+    payload: {
+      playerId: "player-fla-22",
+      targetClubId: "flamengo",
+      amount: 0,
+    },
+  });
+  const offerId = room.pendingOffers[0].id;
+
+  assert.throws(
+    () =>
+      store.submitCommand("fla", {
+        clientCommandId: "wrong-response-kind",
+        kind: "respond_transfer_offer",
+        teamId: "flamengo",
+        payload: { offerId, decision: "accept" },
+      }),
+    /market_offer_type_mismatch/,
+  );
+
+  store.submitCommand("fla", {
+    clientCommandId: "loan-response",
+    kind: "respond_loan_offer",
+    teamId: "flamengo",
+    payload: { offerId, decision: "accept" },
+  });
+  assert.equal(room.pendingOffers[0].status, "accepted");
+});
+
+test("pending negotiations survive multiplayer server restart", () => {
+  const first = new RoomStore();
+  const { room, member: sp } = first.createRoom({
+    connectionId: "sp",
+    managerName: "SP Manager",
+    teamId: "sao-paulo",
+  });
+  first.joinRoom({
+    code: room.code,
+    connectionId: "fla",
+    managerName: "Fla Manager",
+    teamId: "flamengo",
+  });
+  first.submitCommand("sp", {
+    clientCommandId: "persist-offer",
+    kind: "transfer_offer",
+    teamId: "sao-paulo",
+    payload: {
+      playerId: "player-fla-7",
+      targetClubId: "flamengo",
+      amount: 5000000,
+    },
+  });
+
+  const second = new RoomStore(first.serializeSnapshot());
+  const restored = second.getRoom(room.code);
+  const sourceState = second.privateState(restored, sp.id);
+  assert.equal(sourceState.outgoingOffers.length, 1);
+  assert.equal(sourceState.outgoingOffers[0].amount, 5000000);
+  assert.equal(sourceState.outgoingOffers[0].status, "pending");
+});
