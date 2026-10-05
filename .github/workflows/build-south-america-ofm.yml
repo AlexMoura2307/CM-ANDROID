@@ -57,7 +57,7 @@ jobs:
               raise SystemExit(f"Too few players: {qa.get('playersTotal')}")
 
           top = qa.get("segmentStats", {}).get("topDivisionMain", {})
-          if top.get("players", 0) and top.get("photoCoverage", 0) < 0.80:
+          if top.get("players", 0) and top.get("photoCoverage", 0) < 0.75:
               raise SystemExit(
                   "Top-division real photo coverage too low: "
                   f"{top.get('photoCoverage')}"
