@@ -12,6 +12,22 @@ function makeCode(length = 6) {
   return code;
 }
 
+function normalizeIsoDate(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("invalid_start_date");
+  const date = new Date(`${text}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text) {
+    throw new Error("invalid_start_date");
+  }
+  return text;
+}
+
+function plusOneDay(isoDate) {
+  const date = new Date(`${isoDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
 function publicMember(member) {
   return {
     id: member.id,
@@ -27,7 +43,7 @@ export class RoomStore {
     this.rooms = new Map();
   }
 
-  createRoom({ connectionId, managerName, teamId }) {
+  createRoom({ connectionId, managerName, teamId, startDate = "2026-01-01" }) {
     let code = makeCode();
     while (this.rooms.has(code)) code = makeCode();
 
@@ -47,6 +63,7 @@ export class RoomStore {
       code,
       revision: 0,
       dayRevision: 0,
+      currentDate: normalizeIsoDate(startDate),
       ownerMemberId: member.id,
       members: new Map([[member.id, member]]),
       commands: [],
@@ -191,6 +208,7 @@ export class RoomStore {
 
     if (canAdvance) {
       found.room.dayRevision += 1;
+      found.room.currentDate = plusOneDay(found.room.currentDate);
       found.room.revision += 1;
       for (const member of found.room.members.values()) {
         member.advanceReady = false;
@@ -231,6 +249,7 @@ export class RoomStore {
       code: room.code,
       revision: room.revision,
       dayRevision: room.dayRevision,
+      currentDate: room.currentDate,
       ownerMemberId: room.ownerMemberId,
       members: [...room.members.values()].map(publicMember),
     };
