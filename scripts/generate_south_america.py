@@ -1200,6 +1200,19 @@ def generate(country_filter: set[str] | None = None) -> dict:
     logo_ratio = qa["clubsWithLogos"] / max(1, qa["clubsTotal"])
     qa["photoCoverage"] = round(photo_ratio, 4)
     qa["logoCoverage"] = round(logo_ratio, 4)
+    qa["transfermarktPhotos"] = max(
+        0, qa["playersWithPhotos"] - qa.get("sofaFallbackPhotos", 0)
+    )
+    missing_photo_ids = [p["id"] for p in players if not p.get("photo")]
+    qa["missingRealPhotos"] = len(missing_photo_ids)
+    qa["missingRealPhotoIdSample"] = missing_photo_ids[:100]
+
+    # Grave sempre o snapshot de auditoria antes de uma trava de qualidade.
+    # Assim um lote reprovado ainda informa exatamente o que falta corrigir.
+    (ROOT / "qa" / "summary.json").write_text(
+        json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     if photo_ratio < 0.85:
         raise RuntimeError(
             f"QA: cobertura de fotos insuficiente: {qa['playersWithPhotos']}/{qa['playersTotal']}"
