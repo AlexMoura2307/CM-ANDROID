@@ -4,6 +4,8 @@ export const ClientMessage = Object.freeze({
   HELLO: "hello",
   CREATE_ROOM: "create_room",
   JOIN_ROOM: "join_room",
+  RESUME_SESSION: "resume_session",
+  SYNC_REQUEST: "sync_request",
   LEAVE_ROOM: "leave_room",
   READY: "ready",
   COMMAND: "command",
@@ -14,7 +16,9 @@ export const ClientMessage = Object.freeze({
 export const ServerMessage = Object.freeze({
   WELCOME: "welcome",
   ROOM_CREATED: "room_created",
+  SESSION_RESUMED: "session_resumed",
   ROOM_STATE: "room_state",
+  SYNC_STATE: "sync_state",
   COMMAND_ACCEPTED: "command_accepted",
   DAY_ADVANCED: "day_advanced",
   ERROR: "error",
