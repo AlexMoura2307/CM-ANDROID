@@ -325,9 +325,12 @@ export class RoomStore {
       throw new Error("room_already_started");
     }
 
-    const connected = [...found.room.members.values()].filter((m) => m.connected);
-    if (connected.length < 2) throw new Error("multiplayer_requires_two_managers");
-    if (!connected.every((m) => m.ready)) throw new Error("not_all_managers_ready");
+    const members = [...found.room.members.values()];
+    if (members.length < 2) throw new Error("multiplayer_requires_two_managers");
+    if (!members.every((m) => m.connected)) {
+      throw new Error("all_managers_must_be_connected");
+    }
+    if (!members.every((m) => m.ready)) throw new Error("not_all_managers_ready");
 
     found.room.phase = "active";
     found.room.startedAt = Date.now();
@@ -432,10 +435,12 @@ export class RoomStore {
     found.member.advanceReady = Boolean(ready);
     found.room.revision += 1;
 
-    const connectedMembers = [...found.room.members.values()].filter((m) => m.connected);
+    const allMembers = [...found.room.members.values()];
     const canAdvance =
-      connectedMembers.length > 0 &&
-      connectedMembers.every((m) => m.ready && m.advanceReady);
+      allMembers.length > 0 &&
+      allMembers.every(
+        (m) => m.connected && m.ready && m.advanceReady,
+      );
 
     if (canAdvance) {
       found.room.dayRevision += 1;
