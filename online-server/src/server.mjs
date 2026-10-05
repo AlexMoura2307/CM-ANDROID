@@ -159,6 +159,21 @@ wss.on("connection", (ws) => {
           break;
         }
 
+        case ClientMessage.START_GAME: {
+          const { room } = store.startGame(connectionId);
+          for (const member of room.members.values()) {
+            const peer = sockets.get(member.connectionId);
+            if (peer) {
+              send(peer, ServerMessage.GAME_STARTED, {
+                room: store.publicState(room),
+              });
+            }
+          }
+          broadcastRoom(room);
+          persistSnapshot();
+          break;
+        }
+
         case ClientMessage.COMMAND: {
           const { room, entry, duplicate } = store.submitCommand(connectionId, msg.command);
           send(ws, ServerMessage.COMMAND_ACCEPTED, {
