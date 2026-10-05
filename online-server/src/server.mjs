@@ -70,6 +70,7 @@ wss.on("connection", (ws) => {
             managerName: msg.managerName,
             teamId: msg.teamId,
             startDate: msg.startDate,
+            worldFingerprint: msg.worldFingerprint,
           });
           send(ws, ServerMessage.ROOM_CREATED, {
             room: store.publicState(room),
@@ -87,6 +88,7 @@ wss.on("connection", (ws) => {
             connectionId,
             managerName: msg.managerName,
             teamId: msg.teamId,
+            worldFingerprint: msg.worldFingerprint,
           });
           send(ws, ServerMessage.ROOM_STATE, {
             room: store.publicState(room),
