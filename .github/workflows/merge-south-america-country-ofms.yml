@@ -1,0 +1,68 @@
+name: Merge CM South America OFM
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/merge_south_america_country_ofms.py"
+      - ".github/workflows/merge-south-america-country-ofms.yml"
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout CM repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Download 10 approved country packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: CM-??-2026
+          path: country-artifacts
+          merge-multiple: false
+          run-id: 37358116811
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge approved country packages
+        run: python3 scripts/merge_south_america_country_ofms.py country-artifacts
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate merged package
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate wfe-south-america-merged
+
+      - name: Pack merged South America database
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-south-america-merged --output CM_SOUTH_AMERICA_2026.ofm
+
+      - name: Verify packed merged OFM
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info CM_SOUTH_AMERICA_2026.ofm
+
+      - name: Upload merged QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-South-America-Merged-QA
+          path: wfe-south-america-merged-qa/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload merged South America OFM
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-South-America-2026
+          path: CM_SOUTH_AMERICA_2026.ofm
+          if-no-files-found: error
+          retention-days: 14
