@@ -28,9 +28,9 @@ lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", enco
 # mesmo quando o GitHub Actions gera uma nova assinatura debug.
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "CM Teste 2"
-conf["identifier"] = "com.wfe.worldfootballempire.test2"
-conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "CM Teste 2"
+conf["productName"] = "CM Teste 3"
+conf["identifier"] = "com.wfe.worldfootballempire.test3"
+conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "CM Teste 3"
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources["resources/wfe-brasil-2026-fase1.ofm"] = "packages/wfe-brasil-2026-fase1.ofm"
 conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
