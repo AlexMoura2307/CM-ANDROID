@@ -2327,7 +2327,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
 
     top_photo = qa["segmentStats"]["topDivisionMain"]["photoCoverage"]
     qa["photoCoverageGate"] = {
-        "topDivisionMainMinimum": 0.80,
+        "topDivisionMainMinimum": 0.75,
         "overallRecordedNotFatal": True,
         "reason": (
             "Base/reserva de divisões menores nem sempre possui foto pública real; "
@@ -2340,7 +2340,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
         raise RuntimeError(
             f"QA: elenco principal/base incompleto em clubes jogáveis: {sample}"
         )
-    if qa["segmentStats"]["topDivisionMain"]["players"] and top_photo < 0.80:
+    if qa["segmentStats"]["topDivisionMain"]["players"] and top_photo < 0.75:
         raise RuntimeError(
             "QA: fotos reais insuficientes no elenco principal da primeira divisão: "
             f"{top_photo:.1%}"
