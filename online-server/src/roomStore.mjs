@@ -63,6 +63,7 @@ function defaultClubState(teamId) {
     tactics: null,
     training: null,
     staffAssignments: {},
+    scoutingReports: {},
     revision: 0,
   };
 }
@@ -156,6 +157,10 @@ export class RoomStore {
                 ...defaultClubState(String(teamId)),
                 ...(state && typeof state === "object" ? state : {}),
                 teamId: String(teamId),
+                scoutingReports:
+                  state?.scoutingReports && typeof state.scoutingReports === "object"
+                    ? state.scoutingReports
+                    : {},
               },
             ])
           : [],
@@ -419,7 +424,24 @@ export class RoomStore {
       clubState.revision += 1;
     }
 
-    if (kind === "transfer_offer" || kind === "loan_offer") {
+    if (kind === "scout_player") {
+      const playerId = String(command.payload?.playerId || "").trim();
+      const targetClubId = String(command.payload?.targetClubId || "").trim();
+      if (!playerId) throw new Error("invalid_scouting_payload");
+
+      const previous = clubState.scoutingReports[playerId];
+      clubState.scoutingReports[playerId] = {
+        playerId,
+        targetClubId: targetClubId || previous?.targetClubId || null,
+        knowledge: Math.max(15, Number(previous?.knowledge) || 0),
+        status: (Number(previous?.knowledge) || 0) >= 100 ? "complete" : "active",
+        startedDayRevision:
+          previous?.startedDayRevision ?? found.room.dayRevision,
+        lastUpdatedDayRevision:
+          previous?.lastUpdatedDayRevision ?? found.room.dayRevision,
+      };
+      clubState.revision += 1;
+    } else if (kind === "transfer_offer" || kind === "loan_offer") {
       const playerId = String(command.payload?.playerId || "").trim();
       const targetClubId = String(command.payload?.targetClubId || "").trim();
       const amount = Number(command.payload?.amount ?? 0);
@@ -509,6 +531,18 @@ export class RoomStore {
       found.room.revision += 1;
       for (const member of found.room.members.values()) {
         member.advanceReady = false;
+      }
+
+      for (const clubState of found.room.clubStates.values()) {
+        const reports = clubState.scoutingReports || {};
+        for (const report of Object.values(reports)) {
+          if (!report || report.status !== "active") continue;
+          const current = Math.max(0, Math.min(100, Number(report.knowledge) || 0));
+          report.knowledge = Math.min(100, current + 12);
+          report.lastUpdatedDayRevision = found.room.dayRevision;
+          if (report.knowledge >= 100) report.status = "complete";
+        }
+        clubState.revision += 1;
       }
     }
 
