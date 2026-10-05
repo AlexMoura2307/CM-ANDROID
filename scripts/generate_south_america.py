@@ -891,10 +891,20 @@ def generate(country_filter: set[str] | None = None) -> dict:
     # QA estrutural obrigatoria.
     if len({t["id"] for t in teams}) != len(teams):
         raise RuntimeError("QA: IDs duplicados de clubes.")
-    if len(teams) < 350:
-        raise RuntimeError(f"QA: poucos clubes sul-americanos enriquecidos: {len(teams)}")
-    if len(players) < 5000:
-        raise RuntimeError(f"QA: poucos jogadores sul-americanos enriquecidos: {len(players)}")
+
+    catalog_total = sum(qa["countryCatalogCounts"].values())
+    min_teams = max(1, int(catalog_total * 0.90))
+    min_players = max(120, int(len(teams) * 10))
+    qa["minimumExpectedTeams"] = min_teams
+    qa["minimumExpectedPlayers"] = min_players
+    if len(teams) < min_teams:
+        raise RuntimeError(
+            f"QA: poucos clubes enriquecidos: {len(teams)}/{catalog_total} catalogados"
+        )
+    if len(players) < min_players:
+        raise RuntimeError(
+            f"QA: poucos jogadores enriquecidos: {len(players)} para {len(teams)} clubes"
+        )
     if len({p["id"] for p in players}) != len(players):
         raise RuntimeError("QA: IDs duplicados de jogadores.")
 
@@ -938,10 +948,20 @@ def generate(country_filter: set[str] | None = None) -> dict:
             f"QA: cobertura de logos insuficiente: {qa['clubsWithLogos']}/{qa['clubsTotal']}"
         )
 
+    selected_codes = [spec.country_code for spec in specs]
+    unique_codes = list(dict.fromkeys(selected_codes))
+    shard_code = unique_codes[0] if len(unique_codes) == 1 else None
+    package_id = f"cm-{shard_code.lower()}-2026" if shard_code else "cm-south-america-2026"
+    package_name = (
+        f"CM {qa['countries'][shard_code]['name']} 2026"
+        if shard_code
+        else "CM America do Sul 2026"
+    )
+
     manifest = {
         "schema": "world",
-        "id": "cm-south-america-2026",
-        "name": "CM America do Sul 2026",
+        "id": package_id,
+        "name": package_name,
         "description": (
             "Base sul-americana por paises com clubes, elencos, fotos, logos, "
             "posicoes e dados biograficos reais; atributos calculados por modelo "
