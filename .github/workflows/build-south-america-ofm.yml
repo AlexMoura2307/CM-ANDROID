@@ -41,7 +41,7 @@ jobs:
           import json
           from pathlib import Path
 
-          p = Path("wfe-south-america/qa/summary.json")
+          p = Path("wfe-south-america-qa/summary.json")
           if not p.exists():
               raise SystemExit("QA summary not found")
           qa = json.loads(p.read_text(encoding="utf-8"))
@@ -80,7 +80,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CM-South-America-QA
-          path: wfe-south-america/qa/summary.json
+          path: wfe-south-america-qa/summary.json
           if-no-files-found: error
           retention-days: 14
 
