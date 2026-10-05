@@ -1458,6 +1458,46 @@ def generate(country_filter: set[str] | None = None) -> dict:
     if bad_photo_links:
         raise RuntimeError(f"QA ID->foto falhou: {bad_photo_links[:10]}")
 
+    # Integridade visual por CONTEUDO, nao apenas por caminho. Alguns provedores
+    # retornam a mesma silhueta/placeholder para IDs diferentes; isso nao pode
+    # ser contado como foto real do atleta.
+    photo_hashes: dict[str, list[str]] = {}
+    missing_asset_files = []
+    for player in players:
+        photo = player.get("photo")
+        if not photo:
+            continue
+        asset_path = ROOT / photo
+        if not asset_path.exists():
+            missing_asset_files.append(player["id"])
+            player.pop("photo", None)
+            continue
+        digest = sha256(asset_path.read_bytes()).hexdigest()
+        photo_hashes.setdefault(digest, []).append(player["id"])
+
+    duplicate_content_groups = [
+        ids for ids in photo_hashes.values() if len(ids) > 1
+    ]
+    duplicate_content_players = {
+        player_id
+        for group in duplicate_content_groups
+        for player_id in group
+    }
+    if duplicate_content_players:
+        for player in players:
+            if player["id"] in duplicate_content_players:
+                photo = player.pop("photo", None)
+                if photo:
+                    try:
+                        (ROOT / photo).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+    qa["missingPhotoAssetFiles"] = missing_asset_files[:100]
+    qa["duplicatePhotoContentGroups"] = duplicate_content_groups[:50]
+    qa["duplicatePhotoContentPlayers"] = len(duplicate_content_players)
+    qa["playersWithPhotos"] = sum(1 for p in players if p.get("photo"))
+
     logo_paths = [t["logo"] for t in teams if t.get("logo")]
     if len(logo_paths) != len(set(logo_paths)):
         raise RuntimeError("QA: logos de clubes duplicados por caminho.")
