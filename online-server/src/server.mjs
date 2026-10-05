@@ -73,6 +73,7 @@ wss.on("connection", (ws) => {
           send(ws, ServerMessage.ROOM_CREATED, {
             room: store.publicState(room),
             memberId: member.id,
+            resumeToken: member.resumeToken,
           });
           broadcastRoom(room);
           break;
@@ -89,8 +90,33 @@ wss.on("connection", (ws) => {
           send(ws, ServerMessage.ROOM_STATE, {
             room: store.publicState(room),
             memberId: member.id,
+            resumeToken: member.resumeToken,
           });
           broadcastRoom(room);
+          break;
+        }
+
+        case ClientMessage.RESUME_SESSION: {
+          if (store.findMembership(connectionId)) throw new Error("already_in_room");
+          const { room, member } = store.resumeSession({
+            connectionId,
+            resumeToken: msg.resumeToken,
+          });
+          send(ws, ServerMessage.SESSION_RESUMED, {
+            room: store.publicState(room),
+            memberId: member.id,
+            resumeToken: member.resumeToken,
+          });
+          broadcastRoom(room);
+          break;
+        }
+
+        case ClientMessage.SYNC_REQUEST: {
+          const { room, commands } = store.syncSince(connectionId, msg.afterRevision);
+          send(ws, ServerMessage.SYNC_STATE, {
+            room: store.publicState(room),
+            commands,
+          });
           break;
         }
 
@@ -101,11 +127,12 @@ wss.on("connection", (ws) => {
         }
 
         case ClientMessage.COMMAND: {
-          const { room, entry } = store.submitCommand(connectionId, msg.command);
+          const { room, entry, duplicate } = store.submitCommand(connectionId, msg.command);
           send(ws, ServerMessage.COMMAND_ACCEPTED, {
             commandId: entry.id,
             clientCommandId: entry.clientCommandId,
             revision: entry.revision,
+            duplicate,
           });
           broadcastRoom(room);
           break;
