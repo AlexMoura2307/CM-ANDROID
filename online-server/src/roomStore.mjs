@@ -61,6 +61,8 @@ export class RoomStore {
         currentDate: room.currentDate,
         worldFingerprint: room.worldFingerprint,
         ownerMemberId: room.ownerMemberId,
+        phase: room.phase,
+        startedAt: room.startedAt,
         createdAt: room.createdAt,
         commands: room.commands,
         members: [...room.members.values()].map((member) => ({
@@ -117,6 +119,8 @@ export class RoomStore {
           rawRoom.worldFingerprint || "cm-dev-world",
         ),
         ownerMemberId,
+        phase: rawRoom.phase === "active" ? "active" : "lobby",
+        startedAt: rawRoom.startedAt ? Number(rawRoom.startedAt) : null,
         members,
         commands: Array.isArray(rawRoom.commands) ? rawRoom.commands.slice(-5000) : [],
         createdAt: Number(rawRoom.createdAt) || Date.now(),
@@ -153,6 +157,8 @@ export class RoomStore {
       currentDate: normalizeIsoDate(startDate),
       worldFingerprint: normalizeWorldFingerprint(worldFingerprint),
       ownerMemberId: member.id,
+      phase: "lobby",
+      startedAt: null,
       members: new Map([[member.id, member]]),
       commands: [],
       createdAt: Date.now(),
@@ -164,6 +170,7 @@ export class RoomStore {
   joinRoom({ code, connectionId, managerName, teamId, worldFingerprint = "cm-dev-world" }) {
     const room = this.rooms.get(String(code || "").trim().toUpperCase());
     if (!room) throw new Error("room_not_found");
+    if (room.phase !== "lobby") throw new Error("room_already_started");
 
     const expectedWorld = normalizeWorldFingerprint(worldFingerprint);
     if (room.worldFingerprint !== expectedWorld) {
@@ -242,6 +249,26 @@ export class RoomStore {
     const found = this.findMembership(connectionId);
     if (!found) throw new Error("not_in_room");
     found.member.ready = Boolean(ready);
+    found.room.revision += 1;
+    return found;
+  }
+
+  startGame(connectionId) {
+    const found = this.findMembership(connectionId);
+    if (!found) throw new Error("not_in_room");
+    if (found.room.ownerMemberId !== found.member.id) {
+      throw new Error("only_room_owner_can_start");
+    }
+    if (found.room.phase !== "lobby") {
+      throw new Error("room_already_started");
+    }
+
+    const connected = [...found.room.members.values()].filter((m) => m.connected);
+    if (connected.length < 2) throw new Error("multiplayer_requires_two_managers");
+    if (!connected.every((m) => m.ready)) throw new Error("not_all_managers_ready");
+
+    found.room.phase = "active";
+    found.room.startedAt = Date.now();
     found.room.revision += 1;
     return found;
   }
@@ -345,6 +372,8 @@ export class RoomStore {
       currentDate: room.currentDate,
       worldFingerprint: room.worldFingerprint,
       ownerMemberId: room.ownerMemberId,
+      phase: room.phase,
+      startedAt: room.startedAt,
       members: [...room.members.values()].map(publicMember),
     };
   }
