@@ -407,3 +407,132 @@ test("online command payload has a hard server-side size limit", () => {
     /command_payload_too_large/,
   );
 });
+
+
+test("each human receives only their own authoritative club state", () => {
+  const store = new RoomStore();
+  const { room, member: host } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+  const { member: guest } = store.joinRoom({
+    code: room.code,
+    connectionId: "guest",
+    managerName: "Guest",
+    teamId: "flamengo",
+  });
+
+  store.submitCommand("host", {
+    clientCommandId: "sp-tactics",
+    kind: "set_tactics",
+    teamId: "sao-paulo",
+    payload: { mentality: "attacking", press: "high" },
+  });
+  store.submitCommand("guest", {
+    clientCommandId: "fla-tactics",
+    kind: "set_tactics",
+    teamId: "flamengo",
+    payload: { mentality: "balanced", press: "medium" },
+  });
+
+  const hostState = store.privateState(room, host.id);
+  const guestState = store.privateState(room, guest.id);
+
+  assert.deepEqual(hostState.myClubState.tactics, {
+    mentality: "attacking",
+    press: "high",
+  });
+  assert.deepEqual(guestState.myClubState.tactics, {
+    mentality: "balanced",
+    press: "medium",
+  });
+  assert.equal("clubStates" in hostState, false);
+  assert.equal("clubStates" in guestState, false);
+});
+
+test("incremental sync never leaks another human manager's private commands", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "guest",
+    managerName: "Guest",
+    teamId: "flamengo",
+  });
+
+  store.submitCommand("host", {
+    clientCommandId: "sp-lineup",
+    kind: "set_lineup",
+    teamId: "sao-paulo",
+    payload: { playerIds: ["sp1", "sp2"] },
+  });
+  store.submitCommand("guest", {
+    clientCommandId: "fla-lineup",
+    kind: "set_lineup",
+    teamId: "flamengo",
+    payload: { playerIds: ["fla1", "fla2"] },
+  });
+
+  const hostSync = store.syncSince("host", 0);
+  const guestSync = store.syncSince("guest", 0);
+
+  assert.deepEqual(hostSync.commands.map((x) => x.clientCommandId), ["sp-lineup"]);
+  assert.deepEqual(guestSync.commands.map((x) => x.clientCommandId), ["fla-lineup"]);
+});
+
+test("authoritative lineup validates uniqueness and persists in club state", () => {
+  const store = new RoomStore();
+  const { room, member } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+
+  assert.throws(
+    () =>
+      store.submitCommand("host", {
+        clientCommandId: "duplicate-lineup",
+        kind: "set_lineup",
+        teamId: "sao-paulo",
+        payload: { playerIds: ["p1", "p1"] },
+      }),
+    /invalid_lineup_payload/,
+  );
+
+  store.submitCommand("host", {
+    clientCommandId: "valid-lineup",
+    kind: "set_lineup",
+    teamId: "sao-paulo",
+    payload: { playerIds: ["p1", "p2", "p3"] },
+  });
+
+  assert.deepEqual(
+    store.privateState(room, member.id).myClubState.lineup,
+    ["p1", "p2", "p3"],
+  );
+});
+
+test("private club state survives multiplayer server snapshot restore", () => {
+  const first = new RoomStore();
+  const { room, member } = first.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+  });
+  first.submitCommand("a", {
+    clientCommandId: "lineup-before-restart",
+    kind: "set_lineup",
+    teamId: "sao-paulo",
+    payload: { playerIds: ["p1", "p2"] },
+  });
+
+  const second = new RoomStore(first.serializeSnapshot());
+  const restored = second.getRoom(room.code);
+  const restoredState = second.privateState(restored, member.id);
+  assert.deepEqual(restoredState.myClubState.lineup, ["p1", "p2"]);
+});
