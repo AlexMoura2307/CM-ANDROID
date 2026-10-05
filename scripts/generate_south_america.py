@@ -59,6 +59,7 @@ _sofa_lock = threading.Lock()
 _fotmob_lock = threading.Lock()
 _espn_lock = threading.Lock()
 _espn_team_cache: dict[str, list[dict]] = {}
+_affiliate_search_cache: dict[tuple[str, str], dict[str, dict | None]] = {}
 
 
 @dataclass(frozen=True)
@@ -1158,6 +1159,155 @@ def all_country_clubs(country_code: str, country_ids: dict[str, int]) -> list[di
     ]
 
 
+def _country_matches_source(candidate_country: str | None, country_name: str) -> bool:
+    value = norm(candidate_country)
+    wanted = COUNTRY_ALIASES.get(norm(country_name), {norm(country_name)})
+    return not value or value in wanted
+
+
+def _affiliate_suffix(parent_name: str, candidate_name: str) -> str | None:
+    parent = identity_norm(parent_name)
+    candidate = identity_norm(candidate_name)
+    if not parent or not candidate or parent == candidate:
+        return None
+
+    if candidate.startswith(parent + " "):
+        return candidate[len(parent):].strip()
+
+    parent_tokens = parent.split()
+    candidate_tokens = candidate.split()
+    common = len(set(parent_tokens) & set(candidate_tokens))
+    overlap = common / max(1, len(set(parent_tokens)))
+    if overlap < 0.80:
+        return None
+
+    remaining = list(candidate_tokens)
+    for token in parent_tokens:
+        if token in remaining:
+            remaining.remove(token)
+    return " ".join(remaining).strip() or None
+
+
+def _affiliate_kind(parent_name: str, candidate: dict) -> str | None:
+    candidate_name = str(candidate.get("name") or "")
+    suffix = _affiliate_suffix(parent_name, candidate_name)
+    if not suffix:
+        return None
+
+    url_text = identity_norm(candidate.get("url") or "")
+    suffix_text = identity_norm(suffix)
+    combined = f"{suffix_text} {url_text}"
+
+    youth_patterns = (
+        r"\bu\s?(17|18|19|20|21)\b",
+        r"\bsub\s?(17|18|19|20|21)\b",
+        r"\bunder\s?(17|18|19|20|21)\b",
+        r"\bjuvenil\b",
+        r"\byouth\b",
+        r"\bacademy\b",
+    )
+    if any(re.search(pattern, combined) for pattern in youth_patterns):
+        return "youth"
+
+    reserve_patterns = (
+        r"^b$",
+        r"^ii$",
+        r"^2$",
+        r"\breserve(s)?\b",
+        r"\breserva(s)?\b",
+        r"\bsegunda\b",
+        r"\bsecond\s+team\b",
+    )
+    if any(re.search(pattern, suffix_text) for pattern in reserve_patterns):
+        return "reserve"
+
+    return None
+
+
+def _youth_priority(candidate: dict) -> tuple[int, int]:
+    text = identity_norm(
+        f"{candidate.get('name') or ''} {candidate.get('url') or ''}"
+    )
+    for age in (21, 20, 19, 18, 17):
+        if re.search(rf"\b(?:u|sub|under)\s?{age}\b", text):
+            # Prefer U20, then U19, then younger. U21 comes last because CM base
+            # never accepts a player older than 20.
+            rank = {20: 100, 19: 90, 18: 80, 17: 70, 21: 60}[age]
+            return rank, int(candidate.get("squad") or 0)
+    if "juvenil" in text or "youth" in text or "academy" in text:
+        return 50, int(candidate.get("squad") or 0)
+    return 0, int(candidate.get("squad") or 0)
+
+
+def discover_affiliate_clubs(
+    parent_club_id: str,
+    parent_name: str,
+    country_name: str,
+    qa: dict,
+) -> dict[str, dict | None]:
+    cache_key = (str(parent_club_id), norm(parent_name))
+    if cache_key in _affiliate_search_cache:
+        return _affiliate_search_cache[cache_key]
+
+    try:
+        payload = api_json("/clubs/search/" + quote(parent_name, safe=""))
+    except Exception:
+        result = {"reserve": None, "youth": None}
+        _affiliate_search_cache[cache_key] = result
+        return result
+
+    reserves = []
+    youths = []
+    for candidate in payload.get("results", []):
+        if not isinstance(candidate, dict) or not candidate.get("id"):
+            continue
+        if str(candidate["id"]) == str(parent_club_id):
+            continue
+        if not _country_matches_source(candidate.get("country"), country_name):
+            continue
+        kind = _affiliate_kind(parent_name, candidate)
+        if kind == "reserve":
+            reserves.append(candidate)
+        elif kind == "youth":
+            youths.append(candidate)
+
+    reserve = max(
+        reserves,
+        key=lambda item: int(item.get("squad") or 0),
+        default=None,
+    )
+    youth = max(youths, key=_youth_priority, default=None)
+    result = {"reserve": reserve, "youth": youth}
+    _affiliate_search_cache[cache_key] = result
+
+    if reserve:
+        qa["reserveAffiliateClubs"] = qa.get("reserveAffiliateClubs", 0) + 1
+    if youth:
+        qa["youthAffiliateClubs"] = qa.get("youthAffiliateClubs", 0) + 1
+    return result
+
+
+def raw_player_age(raw: dict) -> int | None:
+    age = raw.get("age")
+    try:
+        if age is not None:
+            return int(age)
+    except Exception:
+        pass
+
+    dob = str(raw.get("dateOfBirth") or "")[:10]
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", dob):
+        try:
+            born = datetime.strptime(dob, "%Y-%m-%d").date()
+            anchor = date(2026, 1, 1)
+            return anchor.year - born.year - (
+                (anchor.month, anchor.day) < (born.month, born.day)
+            )
+        except Exception:
+            return None
+    return None
+
+
 def resolve_competition(spec: CompetitionSpec) -> dict:
     # IDs oficiais do Transfermarkt sao preferidos: evitam confundir Apertura,
     # Clausura, copa da liga ou nomes antigos da mesma competicao.
@@ -1443,6 +1593,14 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "clubsWithLogos": 0,
         "positionCounts": {},
         "rosterWarnings": [],
+        "squadSegments": {},
+        "reserveAffiliateClubs": 0,
+        "youthAffiliateClubs": 0,
+        "reservePlayersImported": 0,
+        "youthPlayersImported": 0,
+        "youthPlayersSkippedOver20": 0,
+        "youthPlayersSkippedUnknownAge": 0,
+        "clubsWithoutYouthSource": [],
         "countryCatalogCounts": {},
         "profileFallbackRequests": 0,
         "profileFallbackPhotos": 0,
@@ -1533,6 +1691,72 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 if isinstance(p, dict) and p.get("id")
             ]
 
+            # Elenco completo CM:
+            # - principal/reserva: todo o elenco senior do clube principal;
+            # - reserva/segundo time real: importado quando a fonte encontra um
+            #   afiliado B/II/Reserva;
+            # - base: importada do afiliado U20/U19/U18/U17, limitada a <=20 anos.
+            affiliates = discover_affiliate_clubs(
+                club_id,
+                team["name"],
+                spec.country_name,
+                qa,
+            )
+
+            reserve_players = []
+            reserve_club = affiliates.get("reserve")
+            if reserve_club:
+                try:
+                    reserve_payload = api_json(
+                        f"/clubs/{reserve_club['id']}/players"
+                    )
+                    reserve_players = [
+                        p for p in reserve_payload.get("players", [])
+                        if isinstance(p, dict) and p.get("id")
+                    ]
+                except Exception:
+                    reserve_players = []
+
+            youth_players = []
+            youth_club = affiliates.get("youth")
+            if youth_club:
+                try:
+                    youth_payload = api_json(
+                        f"/clubs/{youth_club['id']}/players"
+                    )
+                    for youth_raw in youth_payload.get("players", []):
+                        if not isinstance(youth_raw, dict) or not youth_raw.get("id"):
+                            continue
+                        age = raw_player_age(youth_raw)
+                        if age is None:
+                            qa["youthPlayersSkippedUnknownAge"] += 1
+                            continue
+                        if age > 20:
+                            qa["youthPlayersSkippedOver20"] += 1
+                            continue
+                        youth_players.append(youth_raw)
+                except Exception:
+                    youth_players = []
+            else:
+                qa["clubsWithoutYouthSource"].append({
+                    "clubId": team["id"],
+                    "clubName": team["name"],
+                    "country": spec.country_code,
+                })
+
+            qa["squadSegments"][team["id"]] = {
+                "clubName": team["name"],
+                "seniorMainRoster": len(raw_players),
+                "reserveAffiliateRoster": len(reserve_players),
+                "youthBaseRoster": len(youth_players),
+                "reserveAffiliateId": (
+                    str(reserve_club["id"]) if reserve_club else None
+                ),
+                "youthAffiliateId": (
+                    str(youth_club["id"]) if youth_club else None
+                ),
+            }
+
             # ESPN entra somente nos clubes participantes da primeira divisao.
             # O cruzamento continua sendo por identidade (DOB+nome ou nome muito
             # forte dentro do mesmo clube), nunca por nome global.
@@ -1573,8 +1797,16 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 return pid, path, source
 
             photo_paths: dict[str, str | None] = {}
+            all_photo_players = {}
+            for player_source in (raw_players, reserve_players, youth_players):
+                for source_player in player_source:
+                    all_photo_players[str(source_player["id"])] = source_player
+
             with ThreadPoolExecutor(max_workers=8) as pool:
-                futures = [pool.submit(_photo_job, p) for p in raw_players]
+                futures = [
+                    pool.submit(_photo_job, p)
+                    for p in all_photo_players.values()
+                ]
                 for future in as_completed(futures):
                     pid, ppath, source = future.result()
                     photo_paths[pid] = ppath
@@ -1600,6 +1832,51 @@ def generate(country_filter: set[str] | None = None) -> dict:
                     if player.get("photo"):
                         comp_photo_count += 1
                     qa["positionCounts"][player["position"]] = qa["positionCounts"].get(player["position"], 0) + 1
+
+            # Reserva/segundo time real entra no elenco senior do clube principal.
+            for raw_player in reserve_players:
+                pid = f"tm-player-{raw_player['id']}"
+                if pid in players_by_id:
+                    continue
+                player = build_player(
+                    raw_player,
+                    team["id"],
+                    spec.country_code,
+                    club_value,
+                    photo_paths.get(pid),
+                )
+                player["youth"] = False
+                players_by_id[player["id"]] = player
+                comp_player_count += 1
+                qa["reservePlayersImported"] += 1
+                if player.get("photo"):
+                    comp_photo_count += 1
+                qa["positionCounts"][player["position"]] = qa["positionCounts"].get(player["position"], 0) + 1
+
+            # Base real: nunca colocar jogador acima de 20 anos no plantel de base.
+            for raw_player in youth_players:
+                pid = f"tm-player-{raw_player['id']}"
+                if pid in players_by_id:
+                    # Se ja subiu e esta no elenco principal/reserva, preserva o
+                    # registro senior; nao duplica nem rebaixa o atleta.
+                    continue
+                player = build_player(
+                    raw_player,
+                    team["id"],
+                    spec.country_code,
+                    club_value,
+                    photo_paths.get(pid),
+                )
+                age = raw_player_age(raw_player)
+                if age is None or age > 20:
+                    continue
+                player["youth"] = True
+                players_by_id[player["id"]] = player
+                comp_player_count += 1
+                qa["youthPlayersImported"] += 1
+                if player.get("photo"):
+                    comp_photo_count += 1
+                qa["positionCounts"][player["position"]] = qa["positionCounts"].get(player["position"], 0) + 1
 
         competition_defs.append({
             "schema": "competition",
@@ -1662,6 +1939,43 @@ def generate(country_filter: set[str] | None = None) -> dict:
     bad_player_clubs = [p["id"] for p in players if p["club"] not in team_ids]
     if bad_player_clubs:
         raise RuntimeError(f"QA: jogadores com clube inexistente: {bad_player_clubs[:10]}")
+
+    overage_youth = []
+    for player in players:
+        if not player.get("youth"):
+            continue
+        dob = str(player.get("dateOfBirth") or "")[:10]
+        age = player.get("age")
+        if dob:
+            try:
+                born = datetime.strptime(dob, "%Y-%m-%d").date()
+                anchor = date(2026, 1, 1)
+                age = anchor.year - born.year - (
+                    (anchor.month, anchor.day) < (born.month, born.day)
+                )
+            except Exception:
+                pass
+        try:
+            age = int(age) if age is not None else None
+        except Exception:
+            age = None
+        if age is not None and age > 20:
+            overage_youth.append((player["id"], age))
+    if overage_youth:
+        raise RuntimeError(
+            f"QA: jogadores acima de 20 anos na base: {overage_youth[:20]}"
+        )
+
+    qa["seniorPlayersTotal"] = sum(1 for p in players if not p.get("youth"))
+    qa["youthPlayersTotal"] = sum(1 for p in players if p.get("youth"))
+    qa["clubsWithYouthRoster"] = sum(
+        1 for data in qa["squadSegments"].values()
+        if data.get("youthBaseRoster", 0) > 0
+    )
+    qa["clubsWithReserveAffiliate"] = sum(
+        1 for data in qa["squadSegments"].values()
+        if data.get("reserveAffiliateRoster", 0) > 0
+    )
 
     generic_positions = [
         p["id"] for p in players
