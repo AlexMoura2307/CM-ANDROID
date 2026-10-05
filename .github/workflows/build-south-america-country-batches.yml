@@ -20,7 +20,7 @@ jobs:
       matrix:
         country: [AR, BO, BR, CL, CO, EC, PY, PE, UY, VE]
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     steps:
       - name: Checkout CM build repo
