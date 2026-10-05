@@ -52,6 +52,7 @@ jobs:
         run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info CM_${{ matrix.country }}_2026.ofm
 
       - name: Upload country QA
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CM-${{ matrix.country }}-QA
