@@ -3,6 +3,25 @@ import { sanitizeManagerName, sanitizeTeamId } from "./protocol.mjs";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+const OWN_CLUB_COMMANDS = new Set([
+  "set_lineup",
+  "set_tactics",
+  "set_training",
+  "set_staff_assignment",
+  "renew_contract",
+  "release_player",
+]);
+
+const MARKET_COMMANDS = new Set([
+  "scout_player",
+  "transfer_offer",
+  "loan_offer",
+  "free_agent_offer",
+]);
+
+const ALLOWED_COMMANDS = new Set([...OWN_CLUB_COMMANDS, ...MARKET_COMMANDS]);
+const MAX_COMMAND_PAYLOAD_BYTES = 64 * 1024;
+
 function makeCode(length = 6) {
   const bytes = crypto.randomBytes(length);
   let code = "";
@@ -292,9 +311,25 @@ export class RoomStore {
       return { ...found, entry: duplicate, duplicate: true };
     }
 
-    const scopeTeamId = String(command.teamId || "");
-    if (scopeTeamId && scopeTeamId !== found.member.teamId) {
+    const kind = String(command.kind || "").trim().slice(0, 80);
+    if (!kind || !ALLOWED_COMMANDS.has(kind)) {
+      throw new Error("unsupported_command_kind");
+    }
+
+    const scopeTeamId = String(command.teamId || "").trim();
+    if (!scopeTeamId) throw new Error("missing_team_scope");
+    if (scopeTeamId !== found.member.teamId) {
       throw new Error("forbidden_team_scope");
+    }
+
+    let payloadBytes = 0;
+    try {
+      payloadBytes = Buffer.byteLength(JSON.stringify(command.payload ?? null), "utf8");
+    } catch {
+      throw new Error("invalid_command_payload");
+    }
+    if (payloadBytes > MAX_COMMAND_PAYLOAD_BYTES) {
+      throw new Error("command_payload_too_large");
     }
 
     const entry = {
@@ -302,13 +337,12 @@ export class RoomStore {
       memberId: found.member.id,
       managerTeamId: found.member.teamId,
       clientCommandId,
-      kind: String(command.kind || "").slice(0, 80),
+      kind,
       payload: command.payload ?? null,
       receivedAt: Date.now(),
       revision: found.room.revision + 1,
     };
 
-    if (!entry.kind) throw new Error("invalid_command_kind");
     found.room.commands.push(entry);
     if (found.room.commands.length > 5000) found.room.commands.splice(0, 1000);
     found.room.revision = entry.revision;
