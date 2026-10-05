@@ -3,6 +3,7 @@ import json, urllib.request, urllib.parse, time
 
 TM="https://transfermarkt-api.fly.dev"
 SOFA="https://www.sofascore.com/api/v1"
+FOTMOB_SEARCH="https://apigw.fotmob.com/searchapi/suggest"
 HEAD={"User-Agent":"Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36","Accept":"application/json,text/plain,*/*","Referer":"https://www.sofascore.com/"}
 IDS=["1208814","962409","844291","1497709","1466510"]
 
@@ -36,7 +37,14 @@ for pid in IDS:
     ]:
         data=get(url)
         print("keys",list(data)[:10])
-        # print only first result/player shape
         vals=data.get("players") or data.get("results") or []
         print("sample",json.dumps(vals[:2],ensure_ascii=False)[:3000])
         time.sleep(0.5)
+
+    fm_url = FOTMOB_SEARCH + "?term=" + q + "&lang=en"
+    fm = get(fm_url)
+    print("FOTMOB type", type(fm).__name__)
+    if isinstance(fm, list):
+        print("FOTMOB sample", json.dumps(fm[:5], ensure_ascii=False)[:5000])
+    else:
+        print("FOTMOB sample", json.dumps(fm, ensure_ascii=False)[:5000])
