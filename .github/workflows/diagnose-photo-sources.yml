@@ -1,0 +1,18 @@
+name: Diagnose player photo sources
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/diagnose_photo_sources.py"
+      - ".github/workflows/diagnose-photo-sources.yml"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Transfermarkt and SofaScore
+        run: python3 scripts/diagnose_photo_sources.py
