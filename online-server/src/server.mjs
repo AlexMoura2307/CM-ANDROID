@@ -50,10 +50,13 @@ function error(ws, code, detail = null) {
 
 function broadcastRoom(room) {
   if (!room) return;
-  const state = store.publicState(room);
   for (const member of room.members.values()) {
     const ws = sockets.get(member.connectionId);
-    if (ws) send(ws, ServerMessage.ROOM_STATE, { room: state });
+    if (ws) {
+      send(ws, ServerMessage.ROOM_STATE, {
+        room: store.privateState(room, member.id),
+      });
+    }
   }
 }
 
@@ -99,7 +102,7 @@ wss.on("connection", (ws) => {
             worldFingerprint: msg.worldFingerprint,
           });
           send(ws, ServerMessage.ROOM_CREATED, {
-            room: store.publicState(room),
+            room: store.privateState(room, member.id),
             memberId: member.id,
             resumeToken: member.resumeToken,
           });
@@ -118,7 +121,7 @@ wss.on("connection", (ws) => {
             worldFingerprint: msg.worldFingerprint,
           });
           send(ws, ServerMessage.ROOM_STATE, {
-            room: store.publicState(room),
+            room: store.privateState(room, member.id),
             memberId: member.id,
             resumeToken: member.resumeToken,
           });
@@ -134,7 +137,7 @@ wss.on("connection", (ws) => {
             resumeToken: msg.resumeToken,
           });
           send(ws, ServerMessage.SESSION_RESUMED, {
-            room: store.publicState(room),
+            room: store.privateState(room, member.id),
             memberId: member.id,
             resumeToken: member.resumeToken,
           });
@@ -146,7 +149,7 @@ wss.on("connection", (ws) => {
         case ClientMessage.SYNC_REQUEST: {
           const { room, commands } = store.syncSince(connectionId, msg.afterRevision);
           send(ws, ServerMessage.SYNC_STATE, {
-            room: store.publicState(room),
+            room: store.privateState(room, member.id),
             commands,
           });
           break;
@@ -165,7 +168,7 @@ wss.on("connection", (ws) => {
             const peer = sockets.get(member.connectionId);
             if (peer) {
               send(peer, ServerMessage.GAME_STARTED, {
-                room: store.publicState(room),
+                room: store.privateState(room, member.id),
               });
             }
           }
