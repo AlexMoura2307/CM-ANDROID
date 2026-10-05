@@ -1,0 +1,158 @@
+import http from "node:http";
+import crypto from "node:crypto";
+import { WebSocketServer, WebSocket } from "ws";
+import {
+  ONLINE_PROTOCOL_VERSION,
+  ClientMessage,
+  ServerMessage,
+  assertEnvelope,
+} from "./protocol.mjs";
+import { RoomStore } from "./roomStore.mjs";
+
+const PORT = Number(process.env.PORT || 8787);
+const store = new RoomStore();
+const sockets = new Map();
+
+function send(ws, type, payload = {}) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ protocolVersion: ONLINE_PROTOCOL_VERSION, type, ...payload }));
+}
+
+function error(ws, code, detail = null) {
+  send(ws, ServerMessage.ERROR, { code, detail });
+}
+
+function broadcastRoom(room) {
+  if (!room) return;
+  const state = store.publicState(room);
+  for (const member of room.members.values()) {
+    const ws = sockets.get(member.connectionId);
+    if (ws) send(ws, ServerMessage.ROOM_STATE, { room: state });
+  }
+}
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, protocolVersion: ONLINE_PROTOCOL_VERSION }));
+    return;
+  }
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "not_found" }));
+});
+
+const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 256 * 1024 });
+
+wss.on("connection", (ws) => {
+  const connectionId = crypto.randomUUID();
+  sockets.set(connectionId, ws);
+  send(ws, ServerMessage.WELCOME, { connectionId });
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = assertEnvelope(JSON.parse(raw.toString("utf8")));
+    } catch (e) {
+      error(ws, e instanceof Error ? e.message : "invalid_message");
+      return;
+    }
+
+    try {
+      switch (msg.type) {
+        case ClientMessage.HELLO:
+          send(ws, ServerMessage.WELCOME, { connectionId });
+          break;
+
+        case ClientMessage.CREATE_ROOM: {
+          if (store.findMembership(connectionId)) throw new Error("already_in_room");
+          const { room, member } = store.createRoom({
+            connectionId,
+            managerName: msg.managerName,
+            teamId: msg.teamId,
+          });
+          send(ws, ServerMessage.ROOM_CREATED, {
+            room: store.publicState(room),
+            memberId: member.id,
+          });
+          broadcastRoom(room);
+          break;
+        }
+
+        case ClientMessage.JOIN_ROOM: {
+          if (store.findMembership(connectionId)) throw new Error("already_in_room");
+          const { room, member } = store.joinRoom({
+            code: msg.code,
+            connectionId,
+            managerName: msg.managerName,
+            teamId: msg.teamId,
+          });
+          send(ws, ServerMessage.ROOM_STATE, {
+            room: store.publicState(room),
+            memberId: member.id,
+          });
+          broadcastRoom(room);
+          break;
+        }
+
+        case ClientMessage.READY: {
+          const { room } = store.setReady(connectionId, msg.ready);
+          broadcastRoom(room);
+          break;
+        }
+
+        case ClientMessage.COMMAND: {
+          const { room, entry } = store.submitCommand(connectionId, msg.command);
+          send(ws, ServerMessage.COMMAND_ACCEPTED, {
+            commandId: entry.id,
+            clientCommandId: entry.clientCommandId,
+            revision: entry.revision,
+          });
+          broadcastRoom(room);
+          break;
+        }
+
+        case ClientMessage.ADVANCE_DAY_READY: {
+          const result = store.markAdvanceReady(connectionId, msg.ready);
+          if (result.advanced) {
+            for (const member of result.room.members.values()) {
+              const peer = sockets.get(member.connectionId);
+              if (peer) {
+                send(peer, ServerMessage.DAY_ADVANCED, {
+                  dayRevision: result.room.dayRevision,
+                  revision: result.room.revision,
+                });
+              }
+            }
+          }
+          broadcastRoom(result.room);
+          break;
+        }
+
+        case ClientMessage.LEAVE_ROOM: {
+          const result = store.remove(connectionId);
+          if (result?.room) broadcastRoom(result.room);
+          break;
+        }
+
+        case ClientMessage.PING:
+          send(ws, ServerMessage.PONG, { now: Date.now() });
+          break;
+
+        default:
+          throw new Error("unsupported_message_type");
+      }
+    } catch (e) {
+      error(ws, e instanceof Error ? e.message : "server_error");
+    }
+  });
+
+  ws.on("close", () => {
+    sockets.delete(connectionId);
+    const found = store.disconnect(connectionId);
+    if (found?.room) broadcastRoom(found.room);
+  });
+});
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`CM online server listening on :${PORT}`);
+});
