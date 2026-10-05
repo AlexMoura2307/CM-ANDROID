@@ -32,6 +32,18 @@ TM_BASE = "https://transfermarkt-api.fly.dev"
 SOFA_BASE = "https://www.sofascore.com/api/v1"
 FOTMOB_SEARCH = "https://apigw.fotmob.com/searchapi/suggest"
 FOTMOB_PLAYER_IMAGE = "https://images.fotmob.com/image_resources/playerimages/{id}.png"
+ESPN_LEAGUE_CODES = {
+    "AR": "arg.1",
+    "BO": "bol.1",
+    "BR": "bra.1",
+    "CL": "chi.1",
+    "CO": "col.1",
+    "EC": "ecu.1",
+    "PY": "par.1",
+    "PE": "per.1",
+    "UY": "uru.1",
+    "VE": "ven.1",
+}
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
     "Accept": "application/json,text/plain,*/*",
@@ -42,8 +54,11 @@ HTTP_HEADERS = {
 _last_api_request_at = 0.0
 _last_sofa_request_at = 0.0
 _last_fotmob_request_at = 0.0
+_last_espn_request_at = 0.0
 _sofa_lock = threading.Lock()
 _fotmob_lock = threading.Lock()
+_espn_lock = threading.Lock()
+_espn_team_cache: dict[str, list[dict]] = {}
 
 
 @dataclass(frozen=True)
@@ -427,6 +442,193 @@ def fotmob_birth_date(payload: dict) -> str | None:
     if len(raw) >= 10 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw[:10]):
         return raw[:10]
     return None
+
+
+def espn_json(url: str) -> dict:
+    global _last_espn_request_at
+    headers = dict(HTTP_HEADERS)
+    headers["Referer"] = "https://www.espn.com/"
+
+    with _espn_lock:
+        wait = 0.08 - (time.monotonic() - _last_espn_request_at)
+        if wait > 0:
+            time.sleep(wait)
+        for attempt in range(3):
+            try:
+                request = urllib.request.Request(url, headers=headers)
+                _last_espn_request_at = time.monotonic()
+                with urllib.request.urlopen(request, timeout=25) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception:
+                time.sleep(0.7 + attempt)
+    return {}
+
+
+def espn_teams(country_code: str, qa: dict) -> list[dict]:
+    if country_code in _espn_team_cache:
+        return _espn_team_cache[country_code]
+    league = ESPN_LEAGUE_CODES.get(country_code)
+    if not league:
+        return []
+    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/teams"
+    payload = espn_json(url)
+    entries = []
+    try:
+        entries = payload["sports"][0]["leagues"][0]["teams"]
+    except (KeyError, IndexError, TypeError):
+        entries = payload.get("teams", [])
+
+    teams = []
+    for entry in entries:
+        team = entry.get("team") if isinstance(entry, dict) else None
+        team = team or entry
+        if isinstance(team, dict) and team.get("id"):
+            teams.append(team)
+    _espn_team_cache[country_code] = teams
+    if teams:
+        qa["espnLeagueTeamsLoaded"] = qa.get("espnLeagueTeamsLoaded", 0) + len(teams)
+    return teams
+
+
+def espn_roster_items(payload: dict) -> list[dict]:
+    result = []
+    for group in payload.get("athletes", []):
+        if isinstance(group, dict) and isinstance(group.get("items"), list):
+            result.extend(group["items"])
+        elif isinstance(group, dict) and group.get("id"):
+            result.append(group)
+    return [
+        item for item in result
+        if isinstance(item, dict) and item.get("id")
+    ]
+
+
+def espn_birth_date(player: dict) -> str | None:
+    raw = player.get("birthDate") or player.get("dateOfBirth")
+    text = str(raw or "").strip()
+    if len(text) >= 10 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", text[:10]):
+        return text[:10]
+    return None
+
+
+def espn_player_name(player: dict) -> str:
+    return str(
+        player.get("displayName")
+        or player.get("fullName")
+        or player.get("name")
+        or ""
+    ).strip()
+
+
+def espn_headshot_url(player: dict) -> str | None:
+    headshot = player.get("headshot")
+    if isinstance(headshot, dict):
+        href = str(headshot.get("href") or "").strip()
+        return href or None
+    if isinstance(headshot, str) and headshot.strip():
+        return headshot.strip()
+    return None
+
+
+def espn_club_roster(
+    club_name: str,
+    country_code: str,
+    qa: dict,
+) -> list[dict]:
+    teams = espn_teams(country_code, qa)
+    if not teams:
+        return []
+
+    target = identity_norm(club_name)
+    candidates = []
+    for team in teams:
+        names = [
+            team.get("displayName"),
+            team.get("name"),
+            team.get("shortDisplayName"),
+            team.get("nickname"),
+        ]
+        scores = []
+        for value in names:
+            candidate = identity_norm(value)
+            if not candidate:
+                continue
+            ratio = SequenceMatcher(None, target, candidate).ratio()
+            target_tokens = set(target.split())
+            candidate_tokens = set(candidate.split())
+            overlap = len(target_tokens & candidate_tokens) / max(
+                1, min(len(target_tokens), len(candidate_tokens))
+            )
+            contains = (
+                target in candidate or candidate in target
+                if min(len(target), len(candidate)) >= 4
+                else False
+            )
+            scores.append(max(ratio, overlap, 0.96 if contains else 0.0))
+        if scores:
+            candidates.append((max(scores), team))
+
+    if not candidates:
+        return []
+    score, team = max(candidates, key=lambda item: item[0])
+    if score < 0.72:
+        return []
+
+    league = ESPN_LEAGUE_CODES[country_code]
+    payload = espn_json(
+        f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/teams/{team['id']}/roster"
+    )
+    roster = espn_roster_items(payload)
+    if roster:
+        qa["espnClubMatches"] = qa.get("espnClubMatches", 0) + 1
+        qa["espnRosterPlayers"] = qa.get("espnRosterPlayers", 0) + len(roster)
+    return roster
+
+
+def espn_photo_map(
+    club_name: str,
+    country_code: str,
+    tm_players: list[dict],
+    qa: dict,
+) -> dict[str, str]:
+    roster = espn_club_roster(club_name, country_code, qa)
+    if not roster:
+        return {}
+
+    result = {}
+    for tm_player in tm_players:
+        target_name = identity_norm(tm_player.get("name"))
+        if not target_name:
+            continue
+        target_dob = str(tm_player.get("dateOfBirth") or "")[:10]
+        candidates = []
+
+        for player in roster:
+            photo = espn_headshot_url(player)
+            if not photo:
+                continue
+            candidate_name = identity_norm(espn_player_name(player))
+            if not candidate_name:
+                continue
+            ratio = SequenceMatcher(None, target_name, candidate_name).ratio()
+            birth = espn_birth_date(player)
+
+            if target_dob and birth:
+                if target_dob != birth or ratio < 0.55:
+                    continue
+                score = 3.0 + ratio
+            else:
+                if target_name != candidate_name and ratio < 0.94:
+                    continue
+                score = ratio
+            candidates.append((score, photo))
+
+        if candidates:
+            _, photo = max(candidates, key=lambda item: item[0])
+            result[str(tm_player["id"])] = photo
+
+    qa["espnPlayerMatches"] = qa.get("espnPlayerMatches", 0) + len(result)
+    return result
 
 
 def club_name_matches(source_club: str, candidate_club: str) -> bool:
@@ -1256,7 +1458,12 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "fotmobDobVerified": 0,
         "fotmobClubVerified": 0,
         "fotmobFallbackPhotos": 0,
-        "source": "Transfermarkt public JSON API + identity-validated FotMob photo fallback",
+        "espnLeagueTeamsLoaded": 0,
+        "espnClubMatches": 0,
+        "espnRosterPlayers": 0,
+        "espnPlayerMatches": 0,
+        "espnFallbackPhotos": 0,
+        "source": "Transfermarkt public JSON API + identity-validated ESPN/FotMob photo fallback",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
     }
 
@@ -1290,6 +1497,9 @@ def generate(country_filter: set[str] | None = None) -> dict:
         participant_ids: list[str] = [
             f"tm-club-{club['id']}" for club in competition_clubs
         ]
+        competition_source_ids = {
+            str(club["id"]) for club in competition_clubs if club.get("id")
+        }
         comp_player_count = 0
         comp_photo_count = 0
         comp_logo_count = 0
@@ -1323,13 +1533,17 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 if isinstance(p, dict) and p.get("id")
             ]
 
-            # O endpoint de elenco já traz os dados reais principais. Para fotos
-            # ausentes usamos uma segunda fonte por clube, com validação forte de
-            # identidade; não fazemos associação apenas pelo nome global.
-            # SofaScore blocks these automated calls (HTTP 403). FotMob's
-            # public suggestion endpoint is used instead for missing real photos,
-            # with strict player-name + current-club validation.
-            sofa_photos = {}
+            # ESPN entra somente nos clubes participantes da primeira divisao.
+            # O cruzamento continua sendo por identidade (DOB+nome ou nome muito
+            # forte dentro do mesmo clube), nunca por nome global.
+            espn_photos = {}
+            if spec.division == 1 and club_id in competition_source_ids:
+                espn_photos = espn_photo_map(
+                    team["name"],
+                    spec.country_code,
+                    raw_players,
+                    qa,
+                )
 
             if len(raw_players) < 14:
                 qa["rosterWarnings"].append({
@@ -1344,6 +1558,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 pid = f"tm-player-{p['id']}"
                 path = download_asset(pid, p.get("imageUrl"), ASSETS_PLAYERS)
                 source = "transfermarkt" if path else None
+                if not path:
+                    espn_url = espn_photos.get(str(p["id"]))
+                    path = download_asset(pid, espn_url, ASSETS_PLAYERS)
+                    source = "espn" if path else None
                 if not path:
                     fallback_url = fotmob_player_photo(
                         p,
@@ -1362,6 +1580,8 @@ def generate(country_filter: set[str] | None = None) -> dict:
                     photo_paths[pid] = ppath
                     if source == "fotmob":
                         qa["fotmobFallbackPhotos"] = qa.get("fotmobFallbackPhotos", 0) + 1
+                    elif source == "espn":
+                        qa["espnFallbackPhotos"] = qa.get("espnFallbackPhotos", 0) + 1
 
             for raw_player in raw_players:
                 pid = f"tm-player-{raw_player['id']}"
@@ -1510,7 +1730,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
     qa["photoCoverage"] = round(photo_ratio, 4)
     qa["logoCoverage"] = round(logo_ratio, 4)
     qa["transfermarktPhotos"] = max(
-        0, qa["playersWithPhotos"] - qa.get("fotmobFallbackPhotos", 0)
+        0,
+        qa["playersWithPhotos"]
+        - qa.get("fotmobFallbackPhotos", 0)
+        - qa.get("espnFallbackPhotos", 0),
     )
     missing_photo_ids = [p["id"] for p in players if not p.get("photo")]
     qa["missingRealPhotos"] = len(missing_photo_ids)
