@@ -24,6 +24,9 @@ jobs:
           ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
           path: upstream
 
+      - name: Install image tooling
+        run: python3 -m pip install --disable-pip-version-check pillow
+
       - name: Generate South America country batches
         run: python3 scripts/generate_south_america.py
 
