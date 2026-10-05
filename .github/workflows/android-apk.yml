@@ -90,7 +90,7 @@ jobs:
 
       - name: Generate CM app icons
         working-directory: upstream
-        run: npm run tauri icon public/wfe-app-icon.svg
+        run: npm run tauri icon public/cm-app-icon.svg
 
       - name: Initialize Tauri Android project
         working-directory: upstream
