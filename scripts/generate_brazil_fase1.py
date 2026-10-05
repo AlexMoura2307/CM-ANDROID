@@ -377,14 +377,19 @@ def _photo_extension(url):
             return suffix
     return ".jpg"
 
-def _download_player_photo(team_id, player_id, *urls):
+def _download_player_photo(player_id, *urls):
+    # A foto pertence ao ID estavel do jogador, nunca ao nome e nunca ao clube.
+    # Assim uma transferencia de clube ou jogadores homonimos nao trocam retratos.
+    safe_player_id = str(player_id).strip()
+    if not safe_player_id:
+        return None
     for url in urls:
         if not url:
             continue
         data = _http_bytes_url(str(url))
         if not data:
             continue
-        rel = f"assets/players/{team_id}/{player_id}{_photo_extension(str(url))}"
+        rel = f"assets/players/by-id/{safe_player_id}{_photo_extension(str(url))}"
         dest = root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
@@ -516,9 +521,9 @@ def fetch_real_serie_a_players():
             headshot = player.get("headshot") or {}
             espn_headshot = headshot.get("href") if isinstance(headshot, dict) else None
             tm_photo = tm_player.get("imageUrl") if tm_player else None
+            internal_player_id = f"espn-{player_id}"
             photo = _download_player_photo(
-                team_id,
-                f"espn-{player_id}",
+                internal_player_id,
                 tm_photo,
                 espn_headshot,
             )
@@ -526,7 +531,7 @@ def fetch_real_serie_a_players():
                 photo_count += 1
 
             item = {
-                "id": f"espn-{player_id}",
+                "id": internal_player_id,
                 "name": display_name,
                 "firstName": first,
                 "lastName": last,
@@ -589,6 +594,25 @@ def fetch_real_serie_a_players():
             f"Poucas fotos reais baixadas: {total_photos}/{len(results)}"
         )
 
+    # Integridade ID -> foto: cada foto precisa estar amarrada ao ID do proprio
+    # jogador e nenhum caminho pode ser reutilizado por dois atletas.
+    photo_paths = []
+    invalid_photo_links = []
+    for item in results:
+        photo = item.get("photo")
+        if not photo:
+            continue
+        expected_prefix = f"assets/players/by-id/{item['id']}."
+        if not photo.startswith(expected_prefix):
+            invalid_photo_links.append((item["id"], photo))
+        photo_paths.append(photo)
+    duplicate_photo_paths = len(photo_paths) != len(set(photo_paths))
+    if invalid_photo_links or duplicate_photo_paths:
+        raise RuntimeError(
+            "Falha de integridade ID->foto: "
+            f"invalidos={invalid_photo_links[:5]}, duplicados={duplicate_photo_paths}"
+        )
+
     print("WFE Brasil: jogadores reais Serie A =", len(results))
     print("WFE Brasil: atletas por clube =", counts)
     print("WFE Brasil: posicoes especificas =", matched_positions)
@@ -600,7 +624,7 @@ real_serie_a_players = fetch_real_serie_a_players()
 manifest={
  "schema":"world","id":"wfe-brasil-2026-fase1","name":"WFE Brasil 2026 - Fase 1",
  "description":"Base WFE Brasil com Series A, B e C, copas nacionais, elencos reais da Serie A 2026, posicoes especificas e fotos reais locais.",
- "version":"0.3.0","author":"WFE","license":"CC0-1.0","packageType":"database",
+ "version":"0.3.1","author":"WFE","license":"CC0-1.0","packageType":"database",
  "gameMinVersion":"0.3.0","formatVersion":1,"baseYear":2026,
  "defaultActiveRegions":[],"defaultActiveCompetitions":["br-serie-a","br-serie-b","br-serie-c","br-copa-do-brasil","br-supercopa"]
 }
