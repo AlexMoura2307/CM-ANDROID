@@ -344,3 +344,66 @@ test("new managers cannot join after multiplayer game starts", () => {
     /room_already_started/,
   );
 });
+
+
+test("server rejects command kinds that are not part of the CM online protocol", () => {
+  const store = new RoomStore();
+  store.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+  });
+
+  assert.throws(
+    () =>
+      store.submitCommand("a", {
+        clientCommandId: "cmd-unknown",
+        kind: "edit_other_club",
+        teamId: "sao-paulo",
+        payload: {},
+      }),
+    /unsupported_command_kind/,
+  );
+});
+
+test("market actions may target another club but must originate from the human club", () => {
+  const store = new RoomStore();
+  store.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+  });
+
+  const result = store.submitCommand("a", {
+    clientCommandId: "cmd-scout",
+    kind: "scout_player",
+    teamId: "sao-paulo",
+    payload: {
+      playerId: "player-123",
+      targetClubId: "flamengo",
+    },
+  });
+
+  assert.equal(result.entry.managerTeamId, "sao-paulo");
+  assert.equal(result.entry.kind, "scout_player");
+});
+
+test("online command payload has a hard server-side size limit", () => {
+  const store = new RoomStore();
+  store.createRoom({
+    connectionId: "a",
+    managerName: "Manager A",
+    teamId: "sao-paulo",
+  });
+
+  assert.throws(
+    () =>
+      store.submitCommand("a", {
+        clientCommandId: "cmd-large",
+        kind: "set_tactics",
+        teamId: "sao-paulo",
+        payload: { blob: "x".repeat(70 * 1024) },
+      }),
+    /command_payload_too_large/,
+  );
+});
