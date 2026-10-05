@@ -29,6 +29,8 @@ ASSETS_PLAYERS = ROOT / "assets" / "players" / "by-id"
 ASSETS_CLUBS = ROOT / "assets" / "clubs" / "by-id"
 TM_BASE = "https://transfermarkt-api.fly.dev"
 SOFA_BASE = "https://www.sofascore.com/api/v1"
+FOTMOB_SEARCH = "https://apigw.fotmob.com/searchapi/suggest"
+FOTMOB_PLAYER_IMAGE = "https://images.fotmob.com/image_resources/playerimages/{id}.png"
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Safari/537.36",
     "Accept": "application/json,text/plain,*/*",
@@ -38,7 +40,9 @@ HTTP_HEADERS = {
 # Esta cadencia deixa a geracao previsivel e evita martelar a fonte.
 _last_api_request_at = 0.0
 _last_sofa_request_at = 0.0
+_last_fotmob_request_at = 0.0
 _sofa_lock = threading.Lock()
+_fotmob_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -374,6 +378,102 @@ def sofa_entity(entry: dict) -> dict:
     if isinstance(player, dict):
         return player
     return entry
+
+
+def fotmob_json(name: str) -> dict:
+    global _last_fotmob_request_at
+    query = urlencode({"term": name, "lang": "en"})
+    url = FOTMOB_SEARCH + "?" + query
+
+    headers = dict(HTTP_HEADERS)
+    headers["Referer"] = "https://www.fotmob.com/"
+
+    with _fotmob_lock:
+        wait = 0.12 - (time.monotonic() - _last_fotmob_request_at)
+        if wait > 0:
+            time.sleep(wait)
+        for attempt in range(3):
+            try:
+                request = urllib.request.Request(url, headers=headers)
+                _last_fotmob_request_at = time.monotonic()
+                with urllib.request.urlopen(request, timeout=25) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception:
+                time.sleep(0.8 + attempt * 1.2)
+    return {}
+
+
+def club_name_matches(source_club: str, candidate_club: str) -> bool:
+    a = identity_norm(source_club)
+    b = identity_norm(candidate_club)
+    if not a or not b:
+        return False
+    if a == b or a in b or b in a:
+        return True
+    ratio = SequenceMatcher(None, a, b).ratio()
+    a_tokens = set(a.split())
+    b_tokens = set(b.split())
+    overlap = len(a_tokens & b_tokens) / max(1, min(len(a_tokens), len(b_tokens)))
+    return ratio >= 0.62 or overlap >= 0.60
+
+
+def fotmob_player_photo(
+    tm_player: dict,
+    club_name: str,
+    qa: dict,
+) -> str | None:
+    name = str(tm_player.get("name") or "").strip()
+    if not name:
+        return None
+
+    qa["fotmobSearchRequests"] = qa.get("fotmobSearchRequests", 0) + 1
+    payload = fotmob_json(name)
+    groups = payload.get("squadMemberSuggest", [])
+    if not isinstance(groups, list):
+        return None
+
+    target_name = identity_norm(name)
+    matches = []
+
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        for option in group.get("options", []) or []:
+            if not isinstance(option, dict):
+                continue
+            payload_data = option.get("payload") or {}
+            if payload_data.get("isCoach") is True:
+                continue
+
+            fotmob_id = str(payload_data.get("id") or "").strip()
+            if not fotmob_id:
+                continue
+
+            option_text = str(option.get("text") or group.get("text") or "")
+            candidate_name = option_text.split("|", 1)[0].strip()
+            candidate_norm = identity_norm(candidate_name)
+            if not candidate_norm:
+                continue
+
+            name_ratio = SequenceMatcher(None, target_name, candidate_norm).ratio()
+            if target_name != candidate_norm and name_ratio < 0.97:
+                continue
+
+            candidate_club = str(payload_data.get("teamName") or "").strip()
+            if not club_name_matches(club_name, candidate_club):
+                continue
+
+            score = 2.0 if target_name == candidate_norm else name_ratio
+            if identity_norm(candidate_club) in identity_norm(club_name) or identity_norm(club_name) in identity_norm(candidate_club):
+                score += 0.5
+            matches.append((score, fotmob_id))
+
+    if not matches:
+        return None
+
+    _, fotmob_id = max(matches, key=lambda item: item[0])
+    qa["fotmobPlayerMatches"] = qa.get("fotmobPlayerMatches", 0) + 1
+    return FOTMOB_PLAYER_IMAGE.format(id=fotmob_id)
 
 
 def sofa_team_squad(club_name: str, country_code: str, qa: dict) -> list[dict]:
@@ -1061,7 +1161,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "sofaFallbackPhotos": 0,
         "sofaPlayerSearchRequests": 0,
         "sofaPlayerSearchMatches": 0,
-        "source": "Transfermarkt public JSON API + identity-validated SofaScore photo fallback",
+        "fotmobSearchRequests": 0,
+        "fotmobPlayerMatches": 0,
+        "fotmobFallbackPhotos": 0,
+        "source": "Transfermarkt public JSON API + identity-validated FotMob photo fallback",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
     }
 
@@ -1131,12 +1234,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
             # O endpoint de elenco já traz os dados reais principais. Para fotos
             # ausentes usamos uma segunda fonte por clube, com validação forte de
             # identidade; não fazemos associação apenas pelo nome global.
-            sofa_photos = sofa_photo_map(
-                team["name"],
-                spec.country_code,
-                raw_players,
-                qa,
-            )
+            # SofaScore blocks these automated calls (HTTP 403). FotMob's
+            # public suggestion endpoint is used instead for missing real photos,
+            # with strict player-name + current-club validation.
+            sofa_photos = {}
 
             if len(raw_players) < 14:
                 qa["rosterWarnings"].append({
@@ -1152,16 +1253,13 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 path = download_asset(pid, p.get("imageUrl"), ASSETS_PLAYERS)
                 source = "transfermarkt" if path else None
                 if not path:
-                    fallback_url = sofa_photos.get(str(p["id"]))
-                    if not fallback_url:
-                        fallback_url = sofa_player_search_photo(
-                            p,
-                            team["name"],
-                            spec.country_code,
-                            qa,
-                        )
+                    fallback_url = fotmob_player_photo(
+                        p,
+                        team["name"],
+                        qa,
+                    )
                     path = download_asset(pid, fallback_url, ASSETS_PLAYERS)
-                    source = "sofascore" if path else None
+                    source = "fotmob" if path else None
                 return pid, path, source
 
             photo_paths: dict[str, str | None] = {}
@@ -1170,8 +1268,8 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 for future in as_completed(futures):
                     pid, ppath, source = future.result()
                     photo_paths[pid] = ppath
-                    if source == "sofascore":
-                        qa["sofaFallbackPhotos"] = qa.get("sofaFallbackPhotos", 0) + 1
+                    if source == "fotmob":
+                        qa["fotmobFallbackPhotos"] = qa.get("fotmobFallbackPhotos", 0) + 1
 
             for raw_player in raw_players:
                 pid = f"tm-player-{raw_player['id']}"
@@ -1280,7 +1378,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
     qa["photoCoverage"] = round(photo_ratio, 4)
     qa["logoCoverage"] = round(logo_ratio, 4)
     qa["transfermarktPhotos"] = max(
-        0, qa["playersWithPhotos"] - qa.get("sofaFallbackPhotos", 0)
+        0, qa["playersWithPhotos"] - qa.get("fotmobFallbackPhotos", 0)
     )
     missing_photo_ids = [p["id"] for p in players if not p.get("photo")]
     qa["missingRealPhotos"] = len(missing_photo_ids)
