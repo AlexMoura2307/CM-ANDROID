@@ -489,6 +489,42 @@ def fm_style_attributes(
     return attrs
 
 
+def source_country_ids() -> dict[str, int]:
+    payload = api_json("/countries/")
+    wanted = {
+        "AR": {"argentina"},
+        "BO": {"bolivia"},
+        "BR": {"brazil", "brasil"},
+        "CL": {"chile"},
+        "CO": {"colombia"},
+        "EC": {"ecuador"},
+        "PY": {"paraguay"},
+        "PE": {"peru"},
+        "UY": {"uruguay"},
+        "VE": {"venezuela"},
+    }
+    result = {}
+    for country in payload.get("countries", []):
+        name = norm(country.get("name"))
+        for code, aliases in wanted.items():
+            if name in aliases and country.get("id") is not None:
+                result[code] = int(country["id"])
+    missing = sorted(set(wanted) - set(result))
+    if missing:
+        raise RuntimeError("Paises sem ID na fonte: " + ", ".join(missing))
+    return result
+
+
+def all_country_clubs(country_code: str, country_ids: dict[str, int]) -> list[dict]:
+    country_id = country_ids[country_code]
+    payload = api_json(f"/clubs/?country_id={country_id}")
+    return [
+        {"id": str(item["id"]), "name": item.get("name") or f"Club {item['id']}"}
+        for item in payload.get("clubs", [])
+        if item.get("id")
+    ]
+
+
 def resolve_competition(spec: CompetitionSpec) -> dict:
     # IDs oficiais do Transfermarkt sao preferidos: evitam confundir Apertura,
     # Clausura, copa da liga ou nomes antigos da mesma competicao.
@@ -697,6 +733,9 @@ def generate(country_filter: set[str] | None = None) -> dict:
     teams_by_id: dict[str, dict] = {}
     players_by_id: dict[str, dict] = {}
     competition_defs: list[dict] = []
+    country_ids = source_country_ids()
+    expanded_countries: set[str] = set()
+    processed_source_clubs: set[str] = set()
     qa = {
         "countries": {},
         "competitions": {},
@@ -705,6 +744,8 @@ def generate(country_filter: set[str] | None = None) -> dict:
         "playersWithPhotos": 0,
         "clubsWithLogos": 0,
         "positionCounts": {},
+        "rosterWarnings": [],
+        "countryCatalogCounts": {},
         "source": "Transfermarkt public JSON API",
         "attributeModel": "FM-style conceptual role weights over real market/biographical data; no proprietary FM database copied",
     }
@@ -713,13 +754,32 @@ def generate(country_filter: set[str] | None = None) -> dict:
         print(f"\n=== LOTE PAIS {spec.country_code} / {spec.display_name} ===")
         remote_comp = resolve_competition(spec)
         clubs_payload = api_json(f"/competitions/{remote_comp['id']}/clubs")
-        raw_clubs = clubs_payload.get("clubs", [])
-        if len(raw_clubs) < spec.min_clubs:
+        competition_clubs = [
+            club for club in clubs_payload.get("clubs", [])
+            if club.get("id")
+        ]
+        if len(competition_clubs) < spec.min_clubs:
             raise RuntimeError(
-                f"{spec.key}: apenas {len(raw_clubs)} clubes; minimo esperado {spec.min_clubs}"
+                f"{spec.key}: apenas {len(competition_clubs)} clubes; minimo esperado {spec.min_clubs}"
             )
 
-        participant_ids: list[str] = []
+        # No primeiro lote de cada pais, amplia a carga para TODOS os clubes
+        # que a fonte publica consegue listar para aquele pais. As competicoes
+        # continuam com seus participantes reais; o catalogo ampliado serve ao
+        # Mundo/Clubes e aos elencos dos clubes fora da primeira divisao.
+        raw_clubs = list(competition_clubs)
+        if spec.country_code not in expanded_countries:
+            country_clubs = all_country_clubs(spec.country_code, country_ids)
+            qa["countryCatalogCounts"][spec.country_code] = len(country_clubs)
+            by_id = {str(club["id"]): club for club in raw_clubs}
+            for club in country_clubs:
+                by_id.setdefault(str(club["id"]), club)
+            raw_clubs = list(by_id.values())
+            expanded_countries.add(spec.country_code)
+
+        participant_ids: list[str] = [
+            f"tm-club-{club['id']}" for club in competition_clubs
+        ]
         comp_player_count = 0
         comp_photo_count = 0
         comp_logo_count = 0
@@ -728,6 +788,9 @@ def generate(country_filter: set[str] | None = None) -> dict:
             club_id = str(raw_club.get("id") or "").strip()
             if not club_id:
                 continue
+            if club_id in processed_source_clubs:
+                continue
+            processed_source_clubs.add(club_id)
             print(f"[{spec.key}] clube {index}/{len(raw_clubs)}: {raw_club.get('name')} ({club_id})")
 
             profile = api_json(f"/clubs/{club_id}/profile")
@@ -743,7 +806,6 @@ def generate(country_filter: set[str] | None = None) -> dict:
             team = build_team(profile, spec, logo_path)
             # O mesmo clube pode aparecer em mais de uma competicao; fica cadastrado uma vez.
             teams_by_id[team["id"]] = team
-            participant_ids.append(team["id"])
             club_value = profile.get("currentMarketValue")
 
             raw_players = [
@@ -751,9 +813,12 @@ def generate(country_filter: set[str] | None = None) -> dict:
                 if isinstance(p, dict) and p.get("id")
             ]
             if len(raw_players) < 14:
-                raise RuntimeError(
-                    f"{team['name']}: elenco atual muito pequeno ({len(raw_players)})"
-                )
+                qa["rosterWarnings"].append({
+                    "clubId": team["id"],
+                    "clubName": team["name"],
+                    "country": spec.country_code,
+                    "players": len(raw_players),
+                })
 
             # Fotos do clube em paralelo; a identidade continua sendo o ID TM.
             def _photo_job(p: dict) -> tuple[str, str | None]:
@@ -810,7 +875,9 @@ def generate(country_filter: set[str] | None = None) -> dict:
         country_qa = qa["countries"].setdefault(spec.country_code, {
             "name": spec.country_name, "clubs": 0, "players": 0, "competitions": []
         })
-        country_qa["clubs"] += len(participant_ids)
+        country_qa["clubs"] = qa["countryCatalogCounts"].get(
+            spec.country_code, country_qa["clubs"]
+        )
         country_qa["players"] += comp_player_count
         country_qa["competitions"].append(spec.key)
 
@@ -824,6 +891,10 @@ def generate(country_filter: set[str] | None = None) -> dict:
     # QA estrutural obrigatoria.
     if len({t["id"] for t in teams}) != len(teams):
         raise RuntimeError("QA: IDs duplicados de clubes.")
+    if len(teams) < 350:
+        raise RuntimeError(f"QA: poucos clubes sul-americanos enriquecidos: {len(teams)}")
+    if len(players) < 5000:
+        raise RuntimeError(f"QA: poucos jogadores sul-americanos enriquecidos: {len(players)}")
     if len({p["id"] for p in players}) != len(players):
         raise RuntimeError("QA: IDs duplicados de jogadores.")
 
