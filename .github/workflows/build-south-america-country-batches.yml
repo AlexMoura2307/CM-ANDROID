@@ -1,0 +1,64 @@
+name: Build CM South America Country Batches
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/generate_south_america.py"
+      - ".github/workflows/build-south-america-country-batches.yml"
+
+jobs:
+  country-batch:
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        country: [AR, BO, BR, CL, CO, EC, PY, PE, UY, VE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout CM build repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Install image tooling
+        run: python3 -m pip install --disable-pip-version-check pillow
+
+      - name: Generate country batch
+        run: python3 scripts/generate_south_america.py --countries ${{ matrix.country }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate country package
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate wfe-south-america
+
+      - name: Pack country package
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- pack wfe-south-america --output CM_${{ matrix.country }}_2026.ofm
+
+      - name: Verify packed package
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info CM_${{ matrix.country }}_2026.ofm
+
+      - name: Upload country QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-${{ matrix.country }}-QA
+          path: wfe-south-america/qa/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload country OFM
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-${{ matrix.country }}-2026
+          path: CM_${{ matrix.country }}_2026.ofm
+          if-no-files-found: error
+          retention-days: 14
