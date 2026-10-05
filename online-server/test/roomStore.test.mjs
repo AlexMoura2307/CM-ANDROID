@@ -536,3 +536,63 @@ test("private club state survives multiplayer server snapshot restore", () => {
   const restoredState = second.privateState(restored, member.id);
   assert.deepEqual(restoredState.myClubState.lineup, ["p1", "p2"]);
 });
+
+
+test("a disconnected human blocks multiplayer game start", () => {
+  const store = new RoomStore();
+  const { room } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+  store.joinRoom({
+    code: room.code,
+    connectionId: "guest",
+    managerName: "Guest",
+    teamId: "flamengo",
+  });
+
+  store.setReady("host", true);
+  store.setReady("guest", true);
+  store.disconnect("guest");
+
+  assert.throws(
+    () => store.startGame("host"),
+    /all_managers_must_be_connected/,
+  );
+});
+
+test("a disconnected human blocks day advancement until reconnecting", () => {
+  const store = new RoomStore();
+  const { room, member: host } = store.createRoom({
+    connectionId: "host",
+    managerName: "Host",
+    teamId: "sao-paulo",
+  });
+  const { member: guest } = store.joinRoom({
+    code: room.code,
+    connectionId: "guest",
+    managerName: "Guest",
+    teamId: "flamengo",
+  });
+
+  store.setReady("host", true);
+  store.setReady("guest", true);
+  store.markAdvanceReady("host", true);
+  store.disconnect("guest");
+
+  const blocked = store.markAdvanceReady("host", true);
+  assert.equal(blocked.advanced, false);
+  assert.equal(room.dayRevision, 0);
+
+  store.resumeSession({
+    connectionId: "guest-reconnected",
+    resumeToken: guest.resumeToken,
+  });
+  store.setReady("guest-reconnected", true);
+  const advanced = store.markAdvanceReady("guest-reconnected", true);
+
+  assert.equal(advanced.advanced, true);
+  assert.equal(room.dayRevision, 1);
+  assert.equal(host.teamId, "sao-paulo");
+});
