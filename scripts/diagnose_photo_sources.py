@@ -48,3 +48,18 @@ for pid in IDS:
         print("FOTMOB sample", json.dumps(fm[:5], ensure_ascii=False)[:5000])
     else:
         print("FOTMOB sample", json.dumps(fm, ensure_ascii=False)[:5000])
+
+    groups = fm.get("squadMemberSuggest", []) if isinstance(fm, dict) else []
+    if groups and groups[0].get("options"):
+        opt = groups[0]["options"][0]
+        fid = (opt.get("payload") or {}).get("id")
+        if fid:
+            pdata = get(f"https://www.fotmob.com/api/data/playerData?id={fid}")
+            print("FOTMOB playerData", json.dumps({
+                "id": fid,
+                "name": pdata.get("name"),
+                "birthDate": pdata.get("birthDate"),
+                "primaryTeam": pdata.get("primaryTeam"),
+                "positionDescription": pdata.get("positionDescription"),
+                "marketValues": pdata.get("marketValues"),
+            }, ensure_ascii=False)[:5000])
