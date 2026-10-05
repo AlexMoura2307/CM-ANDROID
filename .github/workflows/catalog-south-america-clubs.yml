@@ -1,0 +1,25 @@
+name: Catalog South America Clubs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/catalog_south_america_clubs.py"
+      - ".github/workflows/catalog-south-america-clubs.yml"
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Catalog clubs by country
+        run: python3 scripts/catalog_south_america_clubs.py
+      - name: Upload club catalog
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-South-America-Club-Catalog
+          path: south-america-club-catalog/**
+          if-no-files-found: error
+          retention-days: 14
