@@ -353,7 +353,8 @@ def _match_tm_player(player, tm_players):
                 ).ratio(),
             )
 
-    # 3. Fallback por semelhanca forte dentro do mesmo clube.
+    # 3. Fallback somente por semelhanca MUITO forte dentro do mesmo clube.
+    # Evita associar foto/posicao de um homonimo ao ID de outro jogador.
     scored = []
     for candidate in tm_players:
         tm_name = _norm(candidate.get("name") or "")
@@ -363,11 +364,34 @@ def _match_tm_player(player, tm_players):
         espn_tokens = set(espn_name.split())
         tm_tokens = set(tm_name.split())
         overlap = len(espn_tokens & tm_tokens) / max(1, min(len(espn_tokens), len(tm_tokens)))
-        scored.append((max(ratio, overlap), candidate))
+        scored.append((ratio, overlap, candidate))
     if not scored:
         return None
-    score, candidate = max(scored, key=lambda item: item[0])
-    return candidate if score >= 0.72 else None
+    ratio, overlap, candidate = max(scored, key=lambda item: (item[0], item[1]))
+    if ratio >= 0.90 or (ratio >= 0.84 and overlap >= 0.80):
+        return candidate
+    return None
+
+def _tm_identity_is_strong(espn_player, tm_player):
+    if not tm_player:
+        return False
+    espn_name = _norm(
+        espn_player.get("displayName")
+        or espn_player.get("fullName")
+        or espn_player.get("name")
+        or ""
+    )
+    tm_name = _norm(tm_player.get("name") or "")
+    if espn_name and tm_name and espn_name == tm_name:
+        return True
+
+    espn_birth = _birth_date(espn_player)
+    tm_birth = str(tm_player.get("dateOfBirth") or "")[:10]
+    if espn_birth and tm_birth and espn_birth == tm_birth:
+        similarity = SequenceMatcher(None, espn_name, tm_name).ratio()
+        return similarity >= 0.50
+
+    return False
 
 def _photo_extension(url):
     ext = urlparse(url).path.rsplit(".", 1)
@@ -520,12 +544,19 @@ def fetch_real_serie_a_players():
 
             headshot = player.get("headshot") or {}
             espn_headshot = headshot.get("href") if isinstance(headshot, dict) else None
-            tm_photo = tm_player.get("imageUrl") if tm_player else None
+            tm_photo = (
+                tm_player.get("imageUrl")
+                if _tm_identity_is_strong(player, tm_player)
+                else None
+            )
             internal_player_id = f"espn-{player_id}"
+            # A fonte primaria da foto e a propria ESPN, no MESMO registro que
+            # fornece o ID interno. Transfermarkt entra apenas como fallback
+            # quando nome/data confirmam que se trata da mesma pessoa.
             photo = _download_player_photo(
                 internal_player_id,
-                tm_photo,
                 espn_headshot,
+                tm_photo,
             )
             if photo:
                 photo_count += 1
@@ -594,6 +625,14 @@ def fetch_real_serie_a_players():
             f"Poucas fotos reais baixadas: {total_photos}/{len(results)}"
         )
 
+    # Integridade global: um ID so pode pertencer a um jogador na base inteira.
+    player_ids = [item["id"] for item in results]
+    if len(player_ids) != len(set(player_ids)):
+        duplicates = sorted({pid for pid in player_ids if player_ids.count(pid) > 1})
+        raise RuntimeError(
+            "IDs de jogadores duplicados na Serie A: " + ", ".join(duplicates[:10])
+        )
+
     # Integridade ID -> foto: cada foto precisa estar amarrada ao ID do proprio
     # jogador e nenhum caminho pode ser reutilizado por dois atletas.
     photo_paths = []
@@ -624,7 +663,7 @@ real_serie_a_players = fetch_real_serie_a_players()
 manifest={
  "schema":"world","id":"wfe-brasil-2026-fase1","name":"WFE Brasil 2026 - Fase 1",
  "description":"Base WFE Brasil com Series A, B e C, copas nacionais, elencos reais da Serie A 2026, posicoes especificas e fotos reais locais.",
- "version":"0.3.1","author":"WFE","license":"CC0-1.0","packageType":"database",
+ "version":"0.3.2","author":"WFE","license":"CC0-1.0","packageType":"database",
  "gameMinVersion":"0.3.0","formatVersion":1,"baseYear":2026,
  "defaultActiveRegions":[],"defaultActiveCompetitions":["br-serie-a","br-serie-b","br-serie-c","br-copa-do-brasil","br-supercopa"]
 }
