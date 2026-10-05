@@ -12,8 +12,12 @@ on:
         required: true
         type: string
   workflow_run:
-    workflows: ["Build CM South America OFM"]
+    workflows: ["Build CM South America OFM", "Merge CM South America OFM"]
     types: [completed]
+
+concurrency:
+  group: cm-final-android-teste4
+  cancel-in-progress: true
 
 jobs:
   build-android:
