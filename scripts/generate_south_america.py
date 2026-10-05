@@ -25,6 +25,7 @@ except ImportError as exc:
     raise SystemExit("Pillow is required: python -m pip install pillow") from exc
 
 ROOT = Path("wfe-south-america")
+QA_ROOT = Path("wfe-south-america-qa")
 ASSETS_PLAYERS = ROOT / "assets" / "players" / "by-id"
 ASSETS_CLUBS = ROOT / "assets" / "clubs" / "by-id"
 TM_BASE = "https://transfermarkt-api.fly.dev"
@@ -1205,12 +1206,14 @@ def build_player(
 def prepare_root() -> None:
     if ROOT.exists():
         shutil.rmtree(ROOT)
+    if QA_ROOT.exists():
+        shutil.rmtree(QA_ROOT)
     (ROOT / "teams").mkdir(parents=True)
     (ROOT / "players").mkdir(parents=True)
     (ROOT / "competitions").mkdir(parents=True)
     ASSETS_PLAYERS.mkdir(parents=True)
     ASSETS_CLUBS.mkdir(parents=True)
-    (ROOT / "qa").mkdir(parents=True)
+    QA_ROOT.mkdir(parents=True)
 
 
 def generate(country_filter: set[str] | None = None) -> dict:
@@ -1515,7 +1518,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
 
     # Grave sempre o snapshot de auditoria antes de uma trava de qualidade.
     # Assim um lote reprovado ainda informa exatamente o que falta corrigir.
-    (ROOT / "qa" / "summary.json").write_text(
+    (QA_ROOT / "summary.json").write_text(
         json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
@@ -1573,7 +1576,7 @@ def generate(country_filter: set[str] | None = None) -> dict:
         (ROOT / "competitions" / f"{comp['id']}.json").write_text(
             json.dumps(comp, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-    (ROOT / "qa" / "summary.json").write_text(
+    (QA_ROOT / "summary.json").write_text(
         json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
