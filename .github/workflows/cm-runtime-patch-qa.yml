@@ -50,8 +50,8 @@ jobs:
           assert "const CM_PACKAGE_YOUTH_TARGET: usize = 18;" in generator
           assert "ensure_cm_package_youth_academy" in generator
           assert "cm-south-america-2026.ofm" in world
-          assert conf["productName"] == "CM Teste 5"
-          assert conf["identifier"] == "com.cm.clubemanager.test5"
+          assert conf["productName"] == "CM Teste 6"
+          assert conf["identifier"] == "com.cm.clubemanager.test6"
           assert "pub const MAX_FILE_COUNT: usize = 25_000;" in package_rs
           print("CM runtime and South America integration rules verified")
           PY
