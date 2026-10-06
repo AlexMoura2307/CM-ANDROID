@@ -6,9 +6,9 @@ root = Path("upstream")
 # Final CM mobile identity for the South America integrated test build.
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "CM Teste 4"
-conf["identifier"] = "com.cm.clubemanager.test4"
-conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "CM Teste 4"
+conf["productName"] = "CM Teste 5"
+conf["identifier"] = "com.cm.clubemanager.test5"
+conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "CM Teste 5"
 
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources.pop("resources/wfe-brasil-2026-fase1.ofm", None)
@@ -73,3 +73,16 @@ for file_path, pairs in replacements.items():
     file_path.write_text(file_src, encoding="utf-8")
 
 print("CM branding applied")
+
+
+package_rs_path = root / "src-tauri" / "crates" / "ofm_core" / "src" / "generator" / "package.rs"
+package_rs = package_rs_path.read_text(encoding="utf-8")
+if "pub const MAX_FILE_COUNT: usize = 10_000;" not in package_rs:
+    raise RuntimeError("MAX_FILE_COUNT upstream marker not found")
+package_rs = package_rs.replace(
+    "pub const MAX_FILE_COUNT: usize = 10_000;",
+    "pub const MAX_FILE_COUNT: usize = 25_000;",
+    1,
+)
+package_rs_path.write_text(package_rs, encoding="utf-8")
+print("CM South America archive file-count limit set to 25,000")
