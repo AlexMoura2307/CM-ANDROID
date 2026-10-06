@@ -6,9 +6,9 @@ root = Path("upstream")
 # Final CM mobile identity for the South America integrated test build.
 conf_path = root / "src-tauri" / "tauri.conf.json"
 conf = json.loads(conf_path.read_text(encoding="utf-8"))
-conf["productName"] = "CM Teste 5"
-conf["identifier"] = "com.cm.clubemanager.test5"
-conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "CM Teste 5"
+conf["productName"] = "CM Teste 6"
+conf["identifier"] = "com.cm.clubemanager.test6"
+conf.setdefault("app", {}).setdefault("windows", [{}])[0]["title"] = "CM Teste 6"
 
 resources = conf.setdefault("bundle", {}).setdefault("resources", {})
 resources.pop("resources/wfe-brasil-2026-fase1.ofm", None)
