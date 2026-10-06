@@ -9,19 +9,24 @@ on:
     inputs:
       south_america_run_id:
         description: "Successful Build CM South America OFM run id"
-        required: true
+        required: false
         type: string
   workflow_run:
     workflows: ["Merge CM South America OFM"]
     types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - "scripts/prepare_cm_south_america.py"
+      - ".github/workflows/android-apk.yml"
 
 concurrency:
-  group: cm-final-android-teste4
+  group: cm-final-android-teste5
   cancel-in-progress: true
 
 jobs:
   build-android:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -41,7 +46,7 @@ jobs:
         with:
           name: CM-South-America-2026
           path: final-data
-          run-id: ${{ github.event.workflow_run.id || inputs.south_america_run_id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.south_america_run_id || '37376740334' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare CM customizations
@@ -202,13 +207,13 @@ jobs:
           test -n "$APK_FILE"
           test "$(stat -c%s "$APK_FILE")" -gt 5000000
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_FILE" | tee /tmp/cm-apk-badging.txt
-          grep -q "package: name='com.cm.clubemanager.test4'" /tmp/cm-apk-badging.txt
-          cp "$APK_FILE" /tmp/CM_Teste_4_ARM64.apk
+          grep -q "package: name='com.cm.clubemanager.test5'" /tmp/cm-apk-badging.txt
+          cp "$APK_FILE" /tmp/CM_Teste_5_ARM64.apk
 
-      - name: Upload CM Teste 4 APK
+      - name: Upload CM Teste 5 APK
         uses: actions/upload-artifact@v4
         with:
-          name: CM-Teste-4-Android-APK
-          path: /tmp/CM_Teste_4_ARM64.apk
+          name: CM-Teste-5-Android-APK
+          path: /tmp/CM_Teste_5_ARM64.apk
           if-no-files-found: error
           retention-days: 14
