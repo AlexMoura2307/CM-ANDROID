@@ -94,8 +94,8 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      - name: Verify embedded South America database
-        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- info upstream/src-tauri/resources/cm-south-america-2026.ofm
+      - name: Validate embedded South America database with runtime loader
+        run: cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli -- validate upstream/src-tauri/resources/cm-south-america-2026.ofm
 
       - name: Generate CM app icons
         working-directory: upstream
