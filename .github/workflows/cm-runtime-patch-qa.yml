@@ -39,6 +39,7 @@ jobs:
           backend = Path("upstream/src-tauri/src/commands/game/mod.rs").read_text()
           roster = Path("upstream/src-tauri/crates/ofm_core/src/roster.rs").read_text()
           generator = Path("upstream/src-tauri/crates/ofm_core/src/generator/mod.rs").read_text()
+          package_rs = Path("upstream/src-tauri/crates/ofm_core/src/generator/package.rs").read_text()
           world = Path("upstream/src-tauri/src/commands/world.rs").read_text()
           import json
           conf = json.loads(Path("upstream/src-tauri/tauri.conf.json").read_text())
@@ -49,8 +50,9 @@ jobs:
           assert "const CM_PACKAGE_YOUTH_TARGET: usize = 18;" in generator
           assert "ensure_cm_package_youth_academy" in generator
           assert "cm-south-america-2026.ofm" in world
-          assert conf["productName"] == "CM Teste 4"
-          assert conf["identifier"] == "com.cm.clubemanager.test4"
+          assert conf["productName"] == "CM Teste 5"
+          assert conf["identifier"] == "com.cm.clubemanager.test5"
+          assert "pub const MAX_FILE_COUNT: usize = 25_000;" in package_rs
           print("CM runtime and South America integration rules verified")
           PY
 
