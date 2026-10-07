@@ -86,3 +86,325 @@ package_rs = package_rs.replace(
 )
 package_rs_path.write_text(package_rs, encoding="utf-8")
 print("CM South America archive file-count limit set to 25,000")
+
+
+# FM-style country/competition selector for the CM mobile team-selection flow.
+# Domestic competitions now follow the selected country instead of showing every
+# South American competition at once.
+use_team_selection_path = root / "src" / "pages" / "useTeamSelection.ts"
+use_team_selection = use_team_selection_path.read_text(encoding="utf-8")
+old_competition_filter = """  const homeRegionTeamIds = new Set(
+    (gameState?.teams ?? [])
+      .filter((team) => regionCountries.includes(team.country))
+      .map((team) => team.id),
+  );
+
+  const availableCompetitions = competitions.filter((competition) => {
+    if (!selectedHomeRegionId) {
+      return true;
+    }
+
+    const requiredRegions = competitionRequiredRegions(competition);
+    return (
+      requiredRegions.includes(selectedHomeRegionId) ||
+      competition.region_id === selectedHomeRegionId ||
+      (competition.country_id ? regionCountries.includes(competition.country_id) : false) ||
+      competition.participant_ids?.some((teamId) => homeRegionTeamIds.has(teamId)) ||
+      competition.scope === "Continental" ||
+      competition.scope === "International"
+    );
+  });
+"""
+new_competition_filter = """  const homeRegionTeamIds = new Set(
+    (gameState?.teams ?? [])
+      .filter((team) => regionCountries.includes(team.country))
+      .map((team) => team.id),
+  );
+
+  const selectedCountryTeamIds = new Set(
+    (gameState?.teams ?? [])
+      .filter((team) => !selectedCountryCode || team.country === selectedCountryCode)
+      .map((team) => team.id),
+  );
+
+  const availableCompetitions = competitions.filter((competition) => {
+    if (selectedCountryCode) {
+      const hasCountryParticipant = Boolean(
+        competition.participant_ids?.some((teamId) => selectedCountryTeamIds.has(teamId)),
+      );
+      if (competition.scope === "Domestic") {
+        return competition.country_id === selectedCountryCode || hasCountryParticipant;
+      }
+      return hasCountryParticipant;
+    }
+
+    if (!selectedHomeRegionId) {
+      return true;
+    }
+
+    const requiredRegions = competitionRequiredRegions(competition);
+    return (
+      requiredRegions.includes(selectedHomeRegionId) ||
+      competition.region_id === selectedHomeRegionId ||
+      (competition.country_id ? regionCountries.includes(competition.country_id) : false) ||
+      competition.participant_ids?.some((teamId) => homeRegionTeamIds.has(teamId)) ||
+      competition.scope === "Continental" ||
+      competition.scope === "International"
+    );
+  });
+"""
+if old_competition_filter not in use_team_selection:
+    raise RuntimeError("Team selection competition filter marker not found")
+use_team_selection = use_team_selection.replace(
+    old_competition_filter,
+    new_competition_filter,
+    1,
+)
+use_team_selection_path.write_text(use_team_selection, encoding="utf-8")
+
+scope_panel_path = root / "src" / "pages" / "TeamSelectionScopePanel.tsx"
+scope_panel_path.write_text(r'''import { useTranslation } from "react-i18next";
+
+import type { LeagueData, WorldRegionData } from "../store/gameStore";
+import { countryName } from "../lib/countries";
+import { competitionDisplayName } from "../lib/competitionName";
+import { buildRegionLabel } from "../lib/teamRegions";
+import { Badge, Card, CardBody, Checkbox } from "../components/ui";
+import { Check, ChevronDown, ChevronRight, Globe2, Trophy } from "lucide-react";
+import {
+  competitionKindLabel,
+  competitionRequiredRegions,
+  competitionScopeLabel,
+} from "./TeamSelection.helpers";
+
+interface TeamSelectionScopePanelProps {
+  scopeExpanded: boolean;
+  onToggleScopeExpanded: () => void;
+  regions: WorldRegionData[];
+  selectedHomeRegionId: string | null;
+  onSelectHomeRegion: (regionId: string | null) => void;
+  selectedCountryCode: string | null;
+  onSelectCountry: (countryCode: string | null) => void;
+  regionCountries: string[];
+  regionSelection: Record<string, boolean>;
+  onRegionToggle: (regionId: string) => void;
+  availableCompetitions: LeagueData[];
+  competitionSelection: Record<string, boolean>;
+  mandatoryCompetitionIds: Set<string>;
+  activeRegionIds: string[];
+  onCompetitionToggle: (competition: LeagueData) => void;
+}
+
+export default function TeamSelectionScopePanel({
+  scopeExpanded,
+  onToggleScopeExpanded,
+  regions,
+  selectedHomeRegionId,
+  selectedCountryCode,
+  onSelectCountry,
+  regionCountries,
+  availableCompetitions,
+  competitionSelection,
+  mandatoryCompetitionIds,
+  activeRegionIds,
+  onCompetitionToggle,
+}: TeamSelectionScopePanelProps) {
+  const { t, i18n } = useTranslation();
+  const compName = (competition: LeagueData) => competitionDisplayName(competition, t);
+  const selectedRegion = regions.find((region) => region.id === selectedHomeRegionId);
+
+  return (
+    <Card>
+      <button
+        type="button"
+        onClick={onToggleScopeExpanded}
+        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left"
+      >
+        <span className="font-heading text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
+          {t("teamSelect.simulationScope")}
+        </span>
+        <span className="flex items-center gap-2">
+          {!scopeExpanded && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {selectedCountryCode
+                ? countryName(selectedCountryCode, i18n.language)
+                : selectedRegion
+                  ? buildRegionLabel(t, selectedRegion.id, selectedRegion.name)
+                  : t("teamSelect.allCountries")}
+            </span>
+          )}
+          <ChevronRight
+            className={\`h-4 w-4 text-gray-400 transition-transform \${
+              scopeExpanded ? "rotate-90" : ""
+            }\`}
+          />
+        </span>
+      </button>
+
+      {scopeExpanded && (
+        <CardBody className="space-y-4 pt-1">
+          <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm dark:border-navy-600 dark:bg-navy-800">
+            <Globe2 className="h-4 w-4 text-primary-500" />
+            <span className="text-xs font-heading font-bold uppercase tracking-[0.15em] text-gray-500 dark:text-gray-400">
+              {t("teamSelect.homeRegion")}
+            </span>
+            <span className="ml-auto font-medium text-gray-800 dark:text-gray-100">
+              {selectedRegion
+                ? buildRegionLabel(t, selectedRegion.id, selectedRegion.name)
+                : t("teamSelect.allCountries")}
+            </span>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-xs font-heading font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                {t("teamSelect.homeCountry")} · {t("teamSelect.simulatedCompetitions")}
+              </p>
+              <span className="text-[11px] text-gray-400">
+                {regionCountries.length} países
+              </span>
+            </div>
+
+            <div className="max-h-[25rem] overflow-y-auto rounded-xl border border-gray-200 dark:border-navy-600">
+              {regionCountries.map((countryCode) => {
+                const selected = countryCode === selectedCountryCode;
+                return (
+                  <div
+                    key={countryCode}
+                    className="border-b border-gray-200 last:border-b-0 dark:border-navy-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSelectCountry(countryCode)}
+                      className={\`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors \${
+                        selected
+                          ? "bg-primary-500/10 text-primary-700 dark:bg-primary-500/15 dark:text-primary-300"
+                          : "bg-white text-gray-800 hover:bg-gray-50 dark:bg-navy-800 dark:text-gray-100 dark:hover:bg-navy-700"
+                      }\`}
+                    >
+                      <span
+                        className={\`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border \${
+                          selected
+                            ? "border-primary-500 bg-primary-500 text-white"
+                            : "border-gray-300 dark:border-navy-500"
+                        }\`}
+                      >
+                        {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+                      <span className="flex-1 font-heading text-sm font-bold uppercase tracking-wide">
+                        {countryName(countryCode, i18n.language)}
+                      </span>
+                      {selected ? (
+                        <ChevronDown className="h-4 w-4 text-primary-500" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                      )}
+                    </button>
+
+                    {selected && (
+                      <div className="space-y-1 bg-gray-50 p-2 pl-5 dark:bg-navy-900/45">
+                        {availableCompetitions.length === 0 ? (
+                          <p className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">
+                            Nenhuma competição cadastrada para este país.
+                          </p>
+                        ) : (
+                          availableCompetitions.map((competition) => {
+                            const enabled =
+                              Boolean(competitionSelection[competition.id]) ||
+                              mandatoryCompetitionIds.has(competition.id);
+                            const isLocked = mandatoryCompetitionIds.has(competition.id);
+                            const requiredRegions = competitionRequiredRegions(competition);
+                            const missingRegions = requiredRegions.filter(
+                              (regionId) => !activeRegionIds.includes(regionId),
+                            );
+
+                            return (
+                              <div
+                                key={competition.id}
+                                role="button"
+                                aria-pressed={enabled}
+                                aria-disabled={isLocked}
+                                tabIndex={isLocked ? -1 : 0}
+                                onClick={() => !isLocked && onCompetitionToggle(competition)}
+                                onKeyDown={(event) => {
+                                  if (!isLocked && (event.key === "Enter" || event.key === " ")) {
+                                    event.preventDefault();
+                                    onCompetitionToggle(competition);
+                                  }
+                                }}
+                                className={\`rounded-lg border px-3 py-2.5 text-sm transition-colors \${
+                                  enabled
+                                    ? "border-primary-500/30 bg-white dark:bg-navy-800"
+                                    : "border-gray-200 bg-gray-100 opacity-70 dark:border-navy-600 dark:bg-navy-800/70"
+                                } \${
+                                  !isLocked ? "cursor-pointer" : ""
+                                }\`}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <Trophy className="h-4 w-4 shrink-0 text-accent-500" />
+                                    <span className="truncate font-medium">
+                                      {compName(competition)}
+                                    </span>
+                                  </span>
+                                  <span
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                  >
+                                    <Checkbox
+                                      checked={enabled}
+                                      disabled={isLocked}
+                                      onChange={() => onCompetitionToggle(competition)}
+                                      aria-label={compName(competition)}
+                                    />
+                                  </span>
+                                </div>
+
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {competitionScopeLabel(t, competition.scope) && (
+                                    <Badge variant="neutral" size="sm">
+                                      {competitionScopeLabel(t, competition.scope)}
+                                    </Badge>
+                                  )}
+                                  {competition.kind &&
+                                    competition.kind !== "League" &&
+                                    competitionKindLabel(t, competition.kind) && (
+                                      <Badge variant="accent" size="sm">
+                                        {competitionKindLabel(t, competition.kind)}
+                                      </Badge>
+                                    )}
+                                  {isLocked && (
+                                    <Badge variant="primary" size="sm">
+                                      {t("teamSelect.yourClubBadge")}
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                {missingRegions.length > 0 && (
+                                  <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+                                    {t("teamSelect.requiresRegions", {
+                                      regions: missingRegions
+                                        .map((regionId) => buildRegionLabel(t, regionId))
+                                        .join(", "),
+                                    })}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </CardBody>
+      )}
+    </Card>
+  );
+}
+''', encoding="utf-8")
+
+print("FM-style country and competition list applied")
