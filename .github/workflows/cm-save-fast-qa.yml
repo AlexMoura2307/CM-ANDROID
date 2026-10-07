@@ -1,0 +1,53 @@
+name: QA CM First Save Fast
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/prepare_cm.py"
+      - "scripts/prepare_cm_south_america.py"
+      - ".github/workflows/cm-save-fast-qa.yml"
+
+jobs:
+  save-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout CM repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager base
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Download approved South America OFM
+        uses: actions/download-artifact@v4
+        with:
+          name: CM-South-America-2026
+          path: final-data
+          run-id: 37376740334
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply CM patches
+        run: |
+          python3 scripts/prepare_cm.py
+          python3 scripts/prepare_cm_south_america.py
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run real-package first-save regression
+        env:
+          CM_TEST_OFM: ${{ github.workspace }}/final-data/CM_SOUTH_AMERICA_2026.ofm
+          CARGO_INCREMENTAL: "0"
+        run: |
+          cargo test --manifest-path upstream/src-tauri/Cargo.toml -p db \
+            real_south_america_package_can_create_and_reload_first_save -- --nocapture
