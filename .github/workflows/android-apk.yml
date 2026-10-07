@@ -21,7 +21,7 @@ on:
       - ".github/workflows/android-apk.yml"
 
 concurrency:
-  group: cm-final-android-teste5
+  group: cm-final-android-teste6
   cancel-in-progress: true
 
 jobs:
@@ -185,6 +185,10 @@ jobs:
 
       - name: Build APK ARM64
         working-directory: upstream
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_STRIP: "symbols"
+          CARGO_PROFILE_DEV_INCREMENTAL: "false"
         run: npm run tauri android build -- --debug --apk --target aarch64
 
       - name: Locate APK
@@ -200,20 +204,27 @@ jobs:
           fi
           echo "apk_dir=$APK_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verify APK identity and size
+      - name: Verify APK identity and compact native library
         shell: bash
         run: |
           APK_FILE="$(find upstream/src-tauri/gen/android -type f -name "*.apk" | head -n 1)"
           test -n "$APK_FILE"
-          test "$(stat -c%s "$APK_FILE")" -gt 5000000
+          APK_SIZE="$(stat -c%s "$APK_FILE")"
+          test "$APK_SIZE" -gt 5000000
+          test "$APK_SIZE" -lt 220000000
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_FILE" | tee /tmp/cm-apk-badging.txt
-          grep -q "package: name='com.cm.clubemanager.test5'" /tmp/cm-apk-badging.txt
-          cp "$APK_FILE" /tmp/CM_Teste_5_ARM64.apk
+          grep -q "package: name='com.cm.clubemanager.test6'" /tmp/cm-apk-badging.txt
+          LIB_SIZE="$(unzip -l "$APK_FILE" 'lib/arm64-v8a/libopenfootmanager_lib.so' | awk '/libopenfootmanager_lib.so/{print $1}')"
+          test -n "$LIB_SIZE"
+          test "$LIB_SIZE" -lt 150000000
+          echo "APK bytes: $APK_SIZE"
+          echo "Native lib bytes: $LIB_SIZE"
+          cp "$APK_FILE" /tmp/CM_Teste_6_ARM64.apk
 
-      - name: Upload CM Teste 5 APK
+      - name: Upload CM Teste 6 APK
         uses: actions/upload-artifact@v4
         with:
-          name: CM-Teste-5-Android-APK
-          path: /tmp/CM_Teste_5_ARM64.apk
+          name: CM-Teste-6-Android-APK
+          path: /tmp/CM_Teste_6_ARM64.apk
           if-no-files-found: error
           retention-days: 14
