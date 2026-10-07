@@ -1,38 +1,46 @@
-name: Publish CM Teste 5 Release
+name: Publish CM Teste 6 Release
 
 permissions:
   contents: write
   actions: read
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/publish-cm-teste4-release.yml"
+  workflow_run:
+    workflows: ["Build CM Android APK"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
   publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.id == 37549588912 }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Download approved APK artifact
+      - name: Download approved compact APK artifact
         uses: actions/download-artifact@v4
         with:
-          name: CM-Teste-5-Android-APK
+          name: CM-Teste-6-Android-APK
           path: release
-          run-id: 37542732150
+          run-id: 37549588912
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify APK exists
+      - name: Verify compact APK exists
         run: |
-          test -f release/CM_Teste_5_ARM64.apk
-          test "$(stat -c%s release/CM_Teste_5_ARM64.apk)" -gt 400000000
-          sha256sum release/CM_Teste_5_ARM64.apk | tee release/CM_Teste_5_ARM64.sha256
+          test -f release/CM_Teste_6_ARM64.apk
+          SIZE="$(stat -c%s release/CM_Teste_6_ARM64.apk)"
+          test "$SIZE" -gt 5000000
+          test "$SIZE" -lt 220000000
+          echo "APK bytes: $SIZE"
+          sha256sum release/CM_Teste_6_ARM64.apk | tee release/CM_Teste_6_ARM64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete cm-teste-5 --yes --cleanup-tag || true
-          gh release create cm-teste-5             release/CM_Teste_5_ARM64.apk             release/CM_Teste_5_ARM64.sha256             --repo "$GITHUB_REPOSITORY"             --title "CM Teste 5"             --notes "Build Android ARM64 final do CM Teste 5 com a base consolidada da América do Sul."
+          gh release delete cm-teste-6 --yes --cleanup-tag || true
+          gh release create cm-teste-6 \
+            release/CM_Teste_6_ARM64.apk \
+            release/CM_Teste_6_ARM64.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "CM Teste 6" \
+            --notes "Build Android ARM64 compacto. Mesma base completa da America do Sul, com simbolos de debug removidos para reduzir drasticamente o tamanho do download."
