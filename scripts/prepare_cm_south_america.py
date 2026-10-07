@@ -408,3 +408,148 @@ export default function TeamSelectionScopePanel({
 ''', encoding="utf-8")
 
 print("FM-style country and competition list applied")
+
+
+# CM diagnostic: stage initial save writes so real-device save failures are
+# reproducible in CI against the same consolidated South America package.
+game_persistence_path = root / "src-tauri" / "crates" / "db" / "src" / "game_persistence.rs"
+game_persistence = game_persistence_path.read_text(encoding="utf-8")
+stage_replacements = {
+    "    meta_repo::upsert_meta(": "    meta_repo::upsert_meta(",
+}
+# Wrap the major persistence stages with a stage parameter while preserving
+# the existing backend translation key.
+for old, new in [
+    ("    team_repo::upsert_teams(conn, &game.teams)?;",
+     '    team_repo::upsert_teams(conn, &game.teams).map_err(|_| "be.error.gamePersistence.writeFailed?stage=teams".to_string())?;'),
+    ("    journal_repo::persist_cash_journal(conn, game)?;",
+     '    journal_repo::persist_cash_journal(conn, game).map_err(|_| "be.error.gamePersistence.writeFailed?stage=journal".to_string())?;'),
+    ("    player_repo::upsert_players(conn, &game.players)?;",
+     '    player_repo::upsert_players(conn, &game.players).map_err(|_| "be.error.gamePersistence.writeFailed?stage=players".to_string())?;'),
+    ("    staff_repo::replace_staff_list(conn, &game.staff)?;",
+     '    staff_repo::replace_staff_list(conn, &game.staff).map_err(|_| "be.error.gamePersistence.writeFailed?stage=staff".to_string())?;'),
+    ("    message_repo::replace_messages(conn, &game.messages)?;",
+     '    message_repo::replace_messages(conn, &game.messages).map_err(|_| "be.error.gamePersistence.writeFailed?stage=messages".to_string())?;'),
+    ("    news_repo::replace_news_list(conn, &game.news)?;",
+     '    news_repo::replace_news_list(conn, &game.news).map_err(|_| "be.error.gamePersistence.writeFailed?stage=news".to_string())?;'),
+    ("        league_repo::upsert_league(conn, league)?;",
+     '        league_repo::upsert_league(conn, league).map_err(|_| "be.error.gamePersistence.writeFailed?stage=league".to_string())?;'),
+    ("    competition_repo::replace_competitions(conn, &game.competitions)?;",
+     '    competition_repo::replace_competitions(conn, &game.competitions).map_err(|_| "be.error.gamePersistence.writeFailed?stage=competitions".to_string())?;'),
+    ("    national_team_repo::replace_national_teams(conn, &game.national_teams)?;",
+     '    national_team_repo::replace_national_teams(conn, &game.national_teams).map_err(|_| "be.error.gamePersistence.writeFailed?stage=nationalTeams".to_string())?;'),
+    ("    objective_repo::upsert_objectives(conn, &objective_rows)?;",
+     '    objective_repo::upsert_objectives(conn, &objective_rows).map_err(|_| "be.error.gamePersistence.writeFailed?stage=objectives".to_string())?;'),
+    ("    scouting_repo::upsert_scouting_list(conn, &scouting_rows)?;",
+     '    scouting_repo::upsert_scouting_list(conn, &scouting_rows).map_err(|_| "be.error.gamePersistence.writeFailed?stage=scouting".to_string())?;'),
+    ("    scouting_repo::upsert_youth_scouting_list(conn, &youth_scouting_rows)?;",
+     '    scouting_repo::upsert_youth_scouting_list(conn, &youth_scouting_rows).map_err(|_| "be.error.gamePersistence.writeFailed?stage=youthScouting".to_string())?;'),
+]:
+    if old in game_persistence:
+        game_persistence = game_persistence.replace(old, new, 1)
+game_persistence_path.write_text(game_persistence, encoding="utf-8")
+
+game_mod_path = root / "src-tauri" / "src" / "commands" / "game" / "mod.rs"
+game_mod = game_mod_path.read_text(encoding="utf-8")
+diagnostic_test = r'''
+#[cfg(test)]
+mod cm_south_america_save_qa {
+    use super::*;
+    use db::save_manager::SaveManager;
+    use domain::stats::StatsState;
+    use ofm_core::career::{begin_career, CareerScope};
+
+    #[test]
+    fn consolidated_south_america_can_select_a_brazilian_club_and_create_first_save() {
+        let Ok(ofm_path) = std::env::var("CM_TEST_OFM") else {
+            return;
+        };
+        let package_id = "cm-south-america-2026";
+        let unique = uuid::Uuid::new_v4().to_string();
+        let root = std::env::temp_dir().join(format!("cm-save-qa-{unique}"));
+        let packages_dir = root.join("packages");
+        let saves_dir = root.join("saves");
+        std::fs::create_dir_all(&packages_dir).unwrap();
+        std::fs::create_dir_all(&saves_dir).unwrap();
+        std::fs::copy(
+            &ofm_path,
+            packages_dir.join(format!("{package_id}.ofm")),
+        )
+        .unwrap();
+
+        let startup_options = normalize_startup_options(None).unwrap();
+        let opening_year = u32::try_from(startup_options.start_year).ok();
+        let (mut world, package_lockfile) = load_world_data_from_package_ids(
+            &packages_dir,
+            &[package_id.to_string()],
+            opening_year,
+            None,
+            &ofm_core::generator::DefinitionSources::embedded_only(),
+        )
+        .expect("South America OFM loads");
+
+        let clock = game_clock_for_world(&startup_options, &world.metadata).unwrap();
+        let opening_year = u32::try_from(clock.start_date.year())
+            .unwrap_or_else(|_| ofm_core::generator::default_opening_year());
+        ofm_core::generator::normalize_imported_world_for_career_start(&mut world, opening_year);
+
+        let manager = Manager::new(
+            "mgr_user".to_string(),
+            "CM".to_string(),
+            "QA".to_string(),
+            "1980-01-01".to_string(),
+            "BR".to_string(),
+        );
+        let brazil_team_id = world
+            .teams
+            .iter()
+            .find(|team| matches!(team.country.as_str(), "BR" | "BRA"))
+            .or_else(|| world.teams.iter().find(|team| {
+                let name = team.name.to_lowercase();
+                name.contains("são paulo") || name.contains("sao paulo")
+            }))
+            .or_else(|| world.teams.first())
+            .expect("world has a team")
+            .id
+            .clone();
+
+        let (mut game, stats) = build_game_from_world_data(
+            clock,
+            manager,
+            &startup_options,
+            world,
+        );
+        game.package_lockfile = package_lockfile;
+
+        let stats = begin_career(
+            &mut game,
+            &brazil_team_id,
+            CareerScope::default(),
+            stats,
+        )
+        .expect("Brazilian career begins");
+
+        let mut save_manager = SaveManager::init(&saves_dir).unwrap();
+        let save_id = create_new_save(
+            &mut save_manager,
+            &game,
+            &stats,
+            "CM South America QA",
+        )
+        .unwrap_or_else(|error| panic!("initial CM save failed: {error}"));
+
+        assert!(!save_id.is_empty());
+        let loaded = save_manager.load_game(&save_id).expect("saved career reloads");
+        assert_eq!(loaded.manager.team_id.as_deref(), Some(brazil_team_id.as_str()));
+        assert_eq!(loaded.teams.len(), game.teams.len());
+        assert_eq!(loaded.players.len(), game.players.len());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+'''
+if "mod cm_south_america_save_qa" not in game_mod:
+    game_mod += "\n" + diagnostic_test
+game_mod_path.write_text(game_mod, encoding="utf-8")
+
+print("CM South America first-save QA instrumentation applied")
