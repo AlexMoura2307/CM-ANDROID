@@ -726,3 +726,36 @@ if "mod cm_full_package_persistence_fast" not in db_lib:
     db_lib += "\n" + db_fast_test
 db_lib_path.write_text(db_lib, encoding="utf-8")
 print("CM fast DB save regression applied")
+
+
+# Preserve the reserve squad role through SQLite saves/reloads. Upstream's DB
+# parser predates the Reserve enum variant and otherwise collapses it to Senior.
+player_repo_path = root / "src-tauri" / "crates" / "db" / "src" / "repositories" / "player_repo.rs"
+player_repo = player_repo_path.read_text(encoding="utf-8")
+player_repo = player_repo.replace(
+    '''fn parse_squad_role(s: &str) -> SquadRole {
+    match s {
+        "Youth" => SquadRole::Youth,
+        _ => SquadRole::Senior,
+    }
+}''',
+    '''fn parse_squad_role(s: &str) -> SquadRole {
+    match s {
+        "Youth" => SquadRole::Youth,
+        "Reserve" => SquadRole::Reserve,
+        _ => SquadRole::Senior,
+    }
+}''',
+    1,
+)
+player_repo = player_repo.replace(
+    '''R::Senior; [("Senior", R::Senior), ("Youth", R::Youth)]''',
+    '''R::Senior; [
+                    ("Senior", R::Senior),
+                    ("Reserve", R::Reserve),
+                    ("Youth", R::Youth)
+                ]''',
+    1,
+)
+player_repo_path.write_text(player_repo, encoding="utf-8")
+print("CM Reserve squad role persistence fixed")
