@@ -757,5 +757,21 @@ player_repo = player_repo.replace(
                 ]''',
     1,
 )
+player_repo = player_repo.replace(
+    '''    .map_err(|_| GAME_PERSISTENCE_WRITE_ERROR.to_string())?;
+    Ok(())
+}
+
+/// Insert or replace multiple players.''',
+    '''    .map_err(|error| {
+        eprintln!("[CM SAVE] player SQL write failed id={} error={:?}", p.id, error);
+        GAME_PERSISTENCE_WRITE_ERROR.to_string()
+    })?;
+    Ok(())
+}
+
+/// Insert or replace multiple players.''',
+    1,
+)
 player_repo_path.write_text(player_repo, encoding="utf-8")
 print("CM Reserve squad role persistence fixed")
