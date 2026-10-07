@@ -625,3 +625,104 @@ if "mod cm_south_america_save_qa" not in game_mod:
 game_mod_path.write_text(game_mod, encoding="utf-8")
 
 print("CM South America first-save QA instrumentation applied")
+
+
+# Fast DB-only regression for the real South America package. This avoids
+# compiling the desktop Tauri shell just to find a SQLite persistence failure.
+db_lib_path = root / "src-tauri" / "crates" / "db" / "src" / "lib.rs"
+db_lib = db_lib_path.read_text(encoding="utf-8")
+db_fast_test = r'''
+#[cfg(test)]
+mod cm_full_package_persistence_fast {
+    use chrono::{TimeZone, Utc};
+    use domain::manager::Manager;
+    use ofm_core::career::{begin_career, CareerScope};
+    use ofm_core::clock::GameClock;
+    use ofm_core::game::Game;
+    use std::path::Path;
+
+    #[test]
+    fn real_south_america_package_can_create_and_reload_first_save() {
+        let Ok(ofm_path) = std::env::var("CM_TEST_OFM") else {
+            return;
+        };
+
+        let (package, errors) =
+            ofm_core::generator::load_world_package_from_ofm(Path::new(&ofm_path));
+        assert!(errors.is_empty(), "OFM load errors: {errors:?}");
+        let mut world = ofm_core::generator::build_world_from_package(
+            &package,
+            Some(2026),
+            &ofm_core::generator::DefinitionSources::embedded_only(),
+        )
+        .expect("world builds from real South America package");
+        ofm_core::generator::normalize_imported_world_for_career_start(&mut world, 2026);
+
+        let stats_state = world.stats.clone();
+        let clock = GameClock::new(
+            Utc.with_ymd_and_hms(2026, 7, 1, 12, 0, 0)
+                .single()
+                .expect("valid opening date"),
+        );
+        let manager = Manager::new(
+            "mgr_cm_qa".to_string(),
+            "CM".to_string(),
+            "QA".to_string(),
+            "1980-01-01".to_string(),
+            "BR".to_string(),
+        );
+
+        let brazil_team_id = world
+            .teams
+            .iter()
+            .find(|team| team.country == "BR")
+            .expect("Brazilian team exists")
+            .id
+            .clone();
+
+        let mut game = Game::new(
+            clock,
+            manager,
+            world.teams,
+            world.players,
+            world.staff,
+            Vec::new(),
+        );
+        game.competitions = world.competitions;
+        game.national_teams = world.national_teams;
+        game.news = world.news;
+        game.world_history = world.world_history;
+        game.extra_translations = world.extra_translations;
+        game.active_region_ids = world.default_active_regions;
+        game.active_competition_ids = world.default_active_competitions;
+        game.sync_legacy_league();
+
+        let stats_state =
+            begin_career(&mut game, &brazil_team_id, CareerScope::default(), stats_state)
+                .expect("Brazilian career begins");
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("cm-db-fast-{unique}"));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let mut saves = crate::save_manager::SaveManager::init(&root).expect("save manager");
+        let save_id = saves
+            .create_save_with_stats(&game, &stats_state, "CM Fast Save QA")
+            .unwrap_or_else(|error| panic!("CM first save persistence failed: {error}"));
+
+        let loaded = saves.load_game(&save_id).expect("first save reloads");
+        assert_eq!(loaded.manager.team_id.as_deref(), Some(brazil_team_id.as_str()));
+        assert_eq!(loaded.teams.len(), game.teams.len());
+        assert_eq!(loaded.players.len(), game.players.len());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+}
+'''
+if "mod cm_full_package_persistence_fast" not in db_lib:
+    db_lib += "\n" + db_fast_test
+db_lib_path.write_text(db_lib, encoding="utf-8")
+print("CM fast DB save regression applied")
