@@ -460,7 +460,6 @@ diagnostic_test = r'''
 mod cm_south_america_save_qa {
     use super::*;
     use db::save_manager::SaveManager;
-    use domain::stats::StatsState;
     use ofm_core::career::{begin_career, CareerScope};
 
     #[test]
@@ -469,7 +468,11 @@ mod cm_south_america_save_qa {
             return;
         };
         let package_id = "cm-south-america-2026";
-        let unique = uuid::Uuid::new_v4().to_string();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            .to_string();
         let root = std::env::temp_dir().join(format!("cm-save-qa-{unique}"));
         let packages_dir = root.join("packages");
         let saves_dir = root.join("saves");
