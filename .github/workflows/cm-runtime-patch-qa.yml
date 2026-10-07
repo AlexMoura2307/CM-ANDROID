@@ -1,5 +1,9 @@
 name: QA CM Runtime Patches
 
+permissions:
+  contents: read
+  actions: read
+
 on:
   workflow_dispatch:
   push:
@@ -24,12 +28,20 @@ jobs:
           ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
           path: upstream
 
+      - name: Download approved South America OFM
+        uses: actions/download-artifact@v4
+        with:
+          name: CM-South-America-2026
+          path: final-data
+          run-id: 37376740334
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Apply CM runtime patches
         run: |
           python3 scripts/prepare_cm.py
           python3 scripts/prepare_cm_south_america.py
           mkdir -p upstream/src-tauri/resources
-          : > upstream/src-tauri/resources/cm-south-america-2026.ofm
+          cp final-data/CM_SOUTH_AMERICA_2026.ofm upstream/src-tauri/resources/cm-south-america-2026.ofm
 
       - name: Verify CM rules
         run: |
@@ -69,3 +81,96 @@ jobs:
 
       - name: Compile CM Tauri integration
         run: cargo check --manifest-path upstream/src-tauri/Cargo.toml -p openfootmanager
+
+
+      - name: Inject CM full package save regression
+        run: |
+          cat >> upstream/src-tauri/src/commands/game/mod.rs <<'RS'
+
+          #[cfg(test)]
+          mod cm_full_package_save_regression {
+              use super::*;
+
+              #[test]
+              fn cm_full_package_can_begin_career_save_and_reload() {
+                  let nonce = std::time::SystemTime::now()
+                      .duration_since(std::time::UNIX_EPOCH)
+                      .unwrap()
+                      .as_nanos();
+                  let root = std::env::temp_dir().join(format!("cm-full-save-{nonce}"));
+                  let packages_dir = root.join("packages");
+                  let saves_dir = root.join("saves");
+                  std::fs::create_dir_all(&packages_dir).unwrap();
+                  std::fs::create_dir_all(&saves_dir).unwrap();
+
+                  let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                      .join("resources")
+                      .join("cm-south-america-2026.ofm");
+                  let package_path = packages_dir.join("cm-south-america-2026.ofm");
+                  std::fs::copy(&source, &package_path).unwrap();
+
+                  let startup_options = normalize_startup_options(None).unwrap();
+                  let opening_year = u32::try_from(startup_options.start_year).ok();
+                  let package_ids = vec!["cm-south-america-2026".to_string()];
+                  let (mut world, lockfile) = load_world_data_from_package_ids(
+                      &packages_dir,
+                      &package_ids,
+                      opening_year,
+                      None,
+                      &ofm_core::generator::DefinitionSources::embedded_only(),
+                  )
+                  .unwrap();
+
+                  let normalized_year = opening_year
+                      .unwrap_or_else(ofm_core::generator::default_opening_year);
+                  ofm_core::generator::normalize_imported_world_for_career_start(
+                      &mut world,
+                      normalized_year,
+                  );
+
+                  let clock = game_clock_for_world(&startup_options, &world.metadata).unwrap();
+                  let manager = Manager::new(
+                      "mgr_user".to_string(),
+                      "CM".to_string(),
+                      "QA".to_string(),
+                      "1980-01-01".to_string(),
+                      "BR".to_string(),
+                  );
+                  let (mut game, stats_state) =
+                      build_game_from_world_data(clock, manager, &startup_options, world);
+                  game.package_lockfile = lockfile;
+
+                  let team_id = game
+                      .teams
+                      .iter()
+                      .find(|team| team.country == "BR")
+                      .expect("Brazilian team exists")
+                      .id
+                      .clone();
+
+                  let stats_state =
+                      begin_career(&mut game, &team_id, CareerScope::default(), stats_state)
+                          .expect("career begins");
+
+                  let mut save_manager =
+                      db::save_manager::SaveManager::init(&saves_dir).expect("save manager");
+                  let save_id = create_new_save(
+                      &mut save_manager,
+                      &game,
+                      &stats_state,
+                      "CM Full Package QA",
+                  )
+                  .expect("full South America career saves");
+
+                  let loaded = save_manager.load_game(&save_id).expect("save reloads");
+                  assert_eq!(loaded.manager.team_id.as_deref(), Some(team_id.as_str()));
+                  assert_eq!(loaded.teams.len(), game.teams.len());
+                  assert_eq!(loaded.players.len(), game.players.len());
+
+                  std::fs::remove_dir_all(root).ok();
+              }
+          }
+          RS
+
+      - name: CM full package save regression
+        run: cargo test --manifest-path upstream/src-tauri/Cargo.toml -p openfootmanager cm_full_package_can_begin_career_save_and_reload -- --nocapture
