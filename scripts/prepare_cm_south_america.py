@@ -418,6 +418,71 @@ print("FM-style country and competition list applied")
 # reproducible in CI against the same consolidated South America package.
 game_persistence_path = root / "src-tauri" / "crates" / "db" / "src" / "game_persistence.rs"
 game_persistence = game_persistence_path.read_text(encoding="utf-8")
+
+write_game_and_stats_old = """    pub fn write_game_and_stats(
+        db: &GameDatabase,
+        game: &Game,
+        stats: &StatsState,
+        save_id: &str,
+        save_name: &str,
+    ) -> Result<(), String> {
+        let transaction = db
+            .conn()
+            .unchecked_transaction()
+            .map_err(|_| game_persistence_write_error())?;
+        write_game_to_connection(&transaction, game, save_id, save_name)?;
+        stats_repo::replace_stats_state(&transaction, stats)?;
+        transaction
+            .commit()
+            .map_err(|_| game_persistence_write_error())?;
+        Ok(())
+    }
+"""
+write_game_and_stats_new = """    pub fn write_game_and_stats(
+        db: &GameDatabase,
+        game: &Game,
+        stats: &StatsState,
+        save_id: &str,
+        save_name: &str,
+    ) -> Result<(), String> {
+        let transaction = db
+            .conn()
+            .unchecked_transaction()
+            .map_err(|_| "be.error.gamePersistence.writeFailed?stage=transactionOpen".to_string())?;
+        write_game_to_connection(&transaction, game, save_id, save_name)?;
+        stats_repo::replace_stats_state(&transaction, stats)
+            .map_err(|_| "be.error.gamePersistence.writeFailed?stage=stats".to_string())?;
+        transaction
+            .commit()
+            .map_err(|_| "be.error.gamePersistence.writeFailed?stage=commit".to_string())?;
+        Ok(())
+    }
+"""
+if write_game_and_stats_old in game_persistence:
+    game_persistence = game_persistence.replace(
+        write_game_and_stats_old,
+        write_game_and_stats_new,
+        1,
+    )
+
+meta_end_old = """        },
+    )?;
+
+    for manager in &managers {
+        manager_repo::upsert_manager(conn, manager)?;
+    }
+"""
+meta_end_new = """        },
+    )
+    .map_err(|_| "be.error.gamePersistence.writeFailed?stage=meta".to_string())?;
+
+    for manager in &managers {
+        manager_repo::upsert_manager(conn, manager)
+            .map_err(|_| "be.error.gamePersistence.writeFailed?stage=managers".to_string())?;
+    }
+"""
+if meta_end_old in game_persistence:
+    game_persistence = game_persistence.replace(meta_end_old, meta_end_new, 1)
 stage_replacements = {
     "    meta_repo::upsert_meta(": "    meta_repo::upsert_meta(",
 }
