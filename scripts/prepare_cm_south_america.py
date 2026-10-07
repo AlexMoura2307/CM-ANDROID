@@ -407,6 +407,10 @@ export default function TeamSelectionScopePanel({
 }
 ''', encoding="utf-8")
 
+scope_panel_fixed = scope_panel_path.read_text(encoding="utf-8")
+scope_panel_fixed = scope_panel_fixed.replace("\\`", "`").replace("\\${", "${")
+scope_panel_path.write_text(scope_panel_fixed, encoding="utf-8")
+
 print("FM-style country and competition list applied")
 
 
