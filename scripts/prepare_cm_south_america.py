@@ -794,6 +794,45 @@ player_repo = player_repo.replace(
 /// Insert or replace multiple players.''',
     1,
 )
+
+player_repo = player_repo.replace(
+    '''pub fn upsert_players(conn: &Connection, players: &[Player]) -> Result<(), String> {
+    for p in players {
+        upsert_player(conn, p)?;
+    }
+    Ok(())
+}''',
+    '''pub fn upsert_players(conn: &Connection, players: &[Player]) -> Result<(), String> {
+    use std::collections::HashSet;
+
+    let mut occupied_jerseys: HashSet<(String, u8)> = HashSet::new();
+    let mut ordered: Vec<&Player> = players.iter().collect();
+
+    // Keep the first-team shirt number when imported reserve/youth squads reuse
+    // the same number under the parent club id. The DB schema requires a unique
+    // (team_id, jersey_number) pair, while real reserve/base teams may reuse them.
+    ordered.sort_by_key(|player| match player.squad_role {
+        SquadRole::Senior => 0u8,
+        SquadRole::Reserve => 1u8,
+        SquadRole::Youth => 2u8,
+    });
+
+    for p in ordered {
+        if let (Some(team_id), Some(jersey_number)) = (&p.team_id, p.jersey_number) {
+            let key = (team_id.clone(), jersey_number);
+            if !occupied_jerseys.insert(key) {
+                let mut normalized = p.clone();
+                normalized.jersey_number = None;
+                upsert_player(conn, &normalized)?;
+                continue;
+            }
+        }
+        upsert_player(conn, p)?;
+    }
+    Ok(())
+}''',
+    1,
+)
 player_repo_path.write_text(player_repo, encoding="utf-8")
 print("CM Reserve squad role persistence fixed")
 
