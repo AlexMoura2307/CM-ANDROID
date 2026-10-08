@@ -1,0 +1,85 @@
+name: QA CM Integrity and CRUD
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/audit_south_america_integrity.py"
+      - "scripts/prepare_cm.py"
+      - "scripts/prepare_cm_south_america.py"
+      - ".github/workflows/cm-integrity-crud-qa.yml"
+
+jobs:
+  integrity-crud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout CM repo
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenFoot Manager base
+        uses: actions/checkout@v4
+        with:
+          repository: openfootmanager/openfootmanager
+          ref: 8f6659f5022edcb80529661b0d4d416430c9b6b9
+          path: upstream
+
+      - name: Download approved South America OFM
+        uses: actions/download-artifact@v4
+        with:
+          name: CM-South-America-2026
+          path: final-data
+          run-id: 37376740334
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Locate OFM package
+        id: ofm
+        shell: bash
+        run: |
+          OFM="$(find final-data -type f -name '*.ofm' | head -n 1)"
+          test -n "$OFM"
+          echo "path=$OFM" >> "$GITHUB_OUTPUT"
+          echo "Using $OFM"
+
+      - name: Audit IDs names and references
+        run: |
+          python3 scripts/audit_south_america_integrity.py             "${{ steps.ofm.outputs.path }}"             --report cm-integrity-audit.json
+
+      - name: Apply CM runtime patches
+        run: |
+          python3 scripts/prepare_cm.py
+          python3 scripts/prepare_cm_south_america.py
+          mkdir -p upstream/src-tauri/resources
+          cp "${{ steps.ofm.outputs.path }}" upstream/src-tauri/resources/cm-south-america-2026.ofm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: CRUD repository QA
+        run: |
+          cargo test --manifest-path upstream/src-tauri/Cargo.toml -p db -- --nocapture
+
+      - name: Full South America create-read persistence QA
+        env:
+          CM_TEST_OFM_PATH: ${{ github.workspace }}/upstream/src-tauri/resources/cm-south-america-2026.ofm
+          RUST_LOG: info
+        run: |
+          cargo test --manifest-path upstream/src-tauri/Cargo.toml -p openfootmanager             cm_south_america_full_save_roundtrip -- --nocapture
+
+      - name: Package validation
+        run: |
+          cargo run --manifest-path upstream/src-tauri/Cargo.toml -p ofm-cli --             validate upstream/src-tauri/resources/cm-south-america-2026.ofm
+
+      - name: Upload integrity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CM-Integrity-CRUD-QA
+          path: cm-integrity-audit.json
+          if-no-files-found: warn
+          retention-days: 14
