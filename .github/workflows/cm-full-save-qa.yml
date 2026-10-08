@@ -45,6 +45,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
       - name: Run full save round-trip
         env:
           CM_TEST_OFM_PATH: ${{ github.workspace }}/final-data/CM_SOUTH_AMERICA_2026.ofm
