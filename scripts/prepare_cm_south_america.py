@@ -775,3 +775,100 @@ player_repo = player_repo.replace(
 )
 player_repo_path.write_text(player_repo, encoding="utf-8")
 print("CM Reserve squad role persistence fixed")
+
+
+# Persistence diagnostics + full South America save round-trip regression test.
+game_persistence_path = root / "src-tauri" / "crates" / "db" / "src" / "game_persistence.rs"
+game_persistence = game_persistence_path.read_text(encoding="utf-8")
+stage_replacements = {
+    "    meta_repo::upsert_meta(": "    log::info!(\"[cm-save] stage=meta\");\n    meta_repo::upsert_meta(",
+    "    for manager in &managers {": "    log::info!(\"[cm-save] stage=managers count={}\", managers.len());\n    for manager in &managers {",
+    "    team_repo::upsert_teams(conn, &game.teams)?;": "    log::info!(\"[cm-save] stage=teams count={}\", game.teams.len());\n    team_repo::upsert_teams(conn, &game.teams)?;",
+    "    journal_repo::persist_cash_journal(conn, game)?;": "    log::info!(\"[cm-save] stage=cash_journal count={}\", game.cash_journal.len());\n    journal_repo::persist_cash_journal(conn, game)?;",
+    "    player_repo::upsert_players(conn, &game.players)?;": "    log::info!(\"[cm-save] stage=players count={}\", game.players.len());\n    player_repo::upsert_players(conn, &game.players)?;",
+    "    staff_repo::replace_staff_list(conn, &game.staff)?;": "    log::info!(\"[cm-save] stage=staff count={}\", game.staff.len());\n    staff_repo::replace_staff_list(conn, &game.staff)?;",
+    "    message_repo::replace_messages(conn, &game.messages)?;": "    log::info!(\"[cm-save] stage=messages count={}\", game.messages.len());\n    message_repo::replace_messages(conn, &game.messages)?;",
+    "    news_repo::replace_news_list(conn, &game.news)?;": "    log::info!(\"[cm-save] stage=news count={}\", game.news.len());\n    news_repo::replace_news_list(conn, &game.news)?;",
+    "    competition_repo::replace_competitions(conn, &game.competitions)?;": "    log::info!(\"[cm-save] stage=competitions count={}\", game.competitions.len());\n    competition_repo::replace_competitions(conn, &game.competitions)?;",
+    "    national_team_repo::replace_national_teams(conn, &game.national_teams)?;": "    log::info!(\"[cm-save] stage=national_teams count={}\", game.national_teams.len());\n    national_team_repo::replace_national_teams(conn, &game.national_teams)?;",
+    "    objective_repo::upsert_objectives(conn, &objective_rows)?;": "    log::info!(\"[cm-save] stage=objectives count={}\", objective_rows.len());\n    objective_repo::upsert_objectives(conn, &objective_rows)?;",
+    "    scouting_repo::upsert_scouting_list(conn, &scouting_rows)?;": "    log::info!(\"[cm-save] stage=scouting count={}\", scouting_rows.len());\n    scouting_repo::upsert_scouting_list(conn, &scouting_rows)?;",
+    "    scouting_repo::upsert_youth_scouting_list(conn, &youth_scouting_rows)?;": "    log::info!(\"[cm-save] stage=youth_scouting count={}\", youth_scouting_rows.len());\n    scouting_repo::upsert_youth_scouting_list(conn, &youth_scouting_rows)?;",
+}
+for old, new in stage_replacements.items():
+    if old in game_persistence and new not in game_persistence:
+        game_persistence = game_persistence.replace(old, new, 1)
+game_persistence_path.write_text(game_persistence, encoding="utf-8")
+
+game_mod_path = root / "src-tauri" / "src" / "commands" / "game" / "mod.rs"
+game_mod = game_mod_path.read_text(encoding="utf-8")
+if "cm_south_america_full_save_roundtrip" not in game_mod:
+    game_mod += r'''
+
+#[cfg(test)]
+mod cm_full_package_persistence_test {
+    use super::*;
+    use db::save_manager::SaveManager;
+    use domain::manager::Manager;
+    use std::path::Path;
+
+    #[test]
+    fn cm_south_america_full_save_roundtrip() {
+        let Ok(ofm_path) = std::env::var("CM_TEST_OFM_PATH") else {
+            eprintln!("CM_TEST_OFM_PATH not set; skipping external package persistence regression");
+            return;
+        };
+        let path = Path::new(&ofm_path);
+        assert!(path.exists(), "CM_TEST_OFM_PATH does not exist: {ofm_path}");
+
+        let (package, errors) = ofm_core::generator::load_world_package_from_ofm(path);
+        assert!(errors.is_empty(), "OFM load errors: {errors:?}");
+        let sources = ofm_core::generator::DefinitionSources::embedded_only();
+        let mut world =
+            ofm_core::generator::build_world_from_package(&package, Some(2026), &sources)
+                .expect("build South America world");
+        ofm_core::generator::normalize_imported_world_for_career_start(&mut world, 2026);
+
+        let startup_options = normalize_startup_options(None).expect("startup options");
+        let clock = game_clock_for_world(&startup_options, &world.metadata).expect("game clock");
+        let manager = Manager::new(
+            "mgr_user".to_string(),
+            "CM".to_string(),
+            "Tester".to_string(),
+            "1980-01-01".to_string(),
+            "BR".to_string(),
+        );
+        let (mut game, stats_state) =
+            build_game_from_world_data(clock, manager, &startup_options, world);
+        let team_id = game
+            .teams
+            .first()
+            .expect("South America package has at least one team")
+            .id
+            .clone();
+        let stats_state =
+            begin_career(&mut game, &team_id, CareerScope::default(), stats_state)
+                .expect("begin career with full South America package");
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let saves_dir =
+            std::env::temp_dir().join(format!("cm-south-america-save-roundtrip-{unique}"));
+        std::fs::create_dir_all(&saves_dir).unwrap();
+        let mut manager = SaveManager::init(&saves_dir).expect("init SaveManager");
+        let save_id = manager
+            .create_save_with_stats(&game, &stats_state, "CM South America QA")
+            .expect("persist full South America career after team selection");
+        let loaded = manager.load_game(&save_id).expect("reload persisted CM career");
+        assert_eq!(loaded.manager.team_id.as_deref(), Some(team_id.as_str()));
+        assert_eq!(loaded.teams.len(), game.teams.len());
+        assert_eq!(loaded.players.len(), game.players.len());
+        let _ = std::fs::remove_dir_all(&saves_dir);
+    }
+}
+'''
+    game_mod_path.write_text(game_mod, encoding="utf-8")
+
+print("CM full-package persistence regression instrumentation applied")
