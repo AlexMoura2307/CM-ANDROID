@@ -56,6 +56,29 @@ jobs:
           mkdir -p upstream/src-tauri/resources
           cp final-data/CM_SOUTH_AMERICA_2026.ofm upstream/src-tauri/resources/cm-south-america-2026.ofm
 
+      - name: Audit South America player names
+        run: |
+          python3 - <<'PY'
+          import json
+          import re
+          import zipfile
+          from pathlib import Path
+
+          package = Path("final-data/CM_SOUTH_AMERICA_2026.ofm")
+          with zipfile.ZipFile(package) as archive:
+              players = json.loads(archive.read("players/players.json"))["items"]
+
+          invalid = []
+          for player in players:
+              name = str(player.get("name") or "").strip()
+              if not name or re.fullmatch(r"Jogador\\s+\\S+", name, flags=re.I):
+                  invalid.append((player.get("id"), name))
+
+          if invalid:
+              raise SystemExit(f"Invalid/generic South America player names: {invalid[:25]}")
+          print(f"South America player-name QA passed: {len(players)} players, zero blank/generic names")
+          PY
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
