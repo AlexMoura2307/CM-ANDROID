@@ -914,6 +914,211 @@ teams_list_path.write_text(teams_list, encoding="utf-8")
 
 print("CM Mundo clubes mobile compact list applied")
 
+# Mundo > Competições: compact FM14-style list on phones, keeping desktop behaviour.
+competitions_overview_path = root / "src" / "components" / "tournaments" / "CompetitionsOverview.tsx"
+competitions_overview_path.write_text(r'''import { useTranslation } from "react-i18next";
+import { ChevronRight, Trophy, Users } from "lucide-react";
+import type { LeagueData } from "../../store/types";
+import { getCompetitiveFixtures } from "../../lib/fixtures";
+import { competitionDisplayName } from "../../lib/competitionName";
+import { Card, CardHeader, CardBody, Badge } from "../ui";
+
+interface Props {
+  competitions: LeagueData[];
+  userTeamId: string | null;
+  onSelect: (id: string) => void;
+}
+
+export type CompetitionScope = "Domestic" | "Regional" | "Continental" | "International";
+
+export const SCOPE_ORDER: CompetitionScope[] = [
+  "Domestic",
+  "Regional",
+  "Continental",
+  "International",
+];
+
+export function getCompetitionStatus(comp: LeagueData): "notStarted" | "inProgress" | "completed" {
+  const competitive = getCompetitiveFixtures(comp.fixtures);
+  if (competitive.length === 0) return "notStarted";
+  let completed = 0;
+  for (const f of competitive) {
+    if (f.status === "Completed") completed++;
+  }
+  if (completed === 0) return "notStarted";
+  if (completed >= competitive.length) return "completed";
+  return "inProgress";
+}
+
+export default function CompetitionsOverview({ competitions, userTeamId, onSelect }: Props) {
+  const { t } = useTranslation();
+
+  if (competitions.length === 0) {
+    return (
+      <Card>
+        <CardBody>
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <Trophy className="h-8 w-8 text-gray-300 dark:text-navy-600" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t("tournaments.noActive")}</p>
+          </div>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const grouped = new Map<CompetitionScope, LeagueData[]>();
+  for (const c of competitions) {
+    const scope = (c.scope as CompetitionScope | undefined) ?? "Domestic";
+    const bucket = grouped.get(scope);
+    if (bucket) bucket.push(c);
+    else grouped.set(scope, [c]);
+  }
+  const byScope = SCOPE_ORDER.filter((s) => grouped.has(s)).map(
+    (s) => [s, grouped.get(s)!] as const,
+  );
+
+  const statusLabel = (status: "notStarted" | "inProgress" | "completed") =>
+    status === "notStarted"
+      ? t("tournaments.competitions.statusNotStarted")
+      : status === "inProgress"
+        ? t("tournaments.competitions.statusInProgress")
+        : t("tournaments.competitions.statusCompleted");
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>{t("tournaments.competitions.title")}</CardHeader>
+      <CardBody className="p-0">
+        {byScope.map(([scope, comps]) => (
+          <div key={scope}>
+            <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-navy-600 dark:bg-navy-800 md:px-4">
+              <h5 className="font-heading text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-300 md:text-xs md:tracking-wider">
+                {t(`teamSelect.scopes.${scope}`)}
+              </h5>
+            </div>
+
+            <div className="md:hidden">
+              <div className="grid grid-cols-[minmax(0,1fr)_4rem_4.75rem_1.25rem] border-b border-navy-600 bg-navy-800 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-gray-500">
+                <span>Nome</span>
+                <span>Tipo</span>
+                <span>Status</span>
+                <span />
+              </div>
+              {comps.map((comp) => {
+                const status = getCompetitionStatus(comp);
+                const isParticipating =
+                  userTeamId != null && (comp.participant_ids?.includes(userTeamId) ?? false);
+
+                return (
+                  <button
+                    type="button"
+                    key={comp.id}
+                    onClick={() => onSelect(comp.id)}
+                    className="grid w-full grid-cols-[minmax(0,1fr)_4rem_4.75rem_1.25rem] items-center border-b border-navy-700 bg-navy-900 px-3 py-2.5 text-left last:border-b-0 active:bg-navy-800"
+                    data-testid={`competitions-overview-row-${comp.id}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-gray-100">
+                        {competitionDisplayName(comp, t)}
+                      </p>
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <span className="text-[9px] text-gray-500">
+                          {t("schedule.season", { number: comp.season })}
+                        </span>
+                        {isParticipating && (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-primary-500/15 px-1 py-0.5 text-[8px] font-bold uppercase text-primary-300">
+                            <Users className="h-2.5 w-2.5" />
+                            Seu clube
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <span className="truncate text-[10px] text-gray-400">
+                      {t(`teamSelect.kinds.${comp.kind ?? "League"}`)}
+                    </span>
+
+                    <span
+                      className={`truncate text-[9px] font-semibold ${
+                        status === "completed"
+                          ? "text-accent-400"
+                          : status === "inProgress"
+                            ? "text-primary-400"
+                            : "text-gray-500"
+                      }`}
+                    >
+                      {statusLabel(status)}
+                    </span>
+
+                    <ChevronRight className="h-4 w-4 text-gray-600" />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hidden divide-y divide-gray-100 dark:divide-navy-600 md:block">
+              {comps.map((comp) => {
+                const status = getCompetitionStatus(comp);
+                const isParticipating =
+                  userTeamId != null && (comp.participant_ids?.includes(userTeamId) ?? false);
+
+                return (
+                  <button
+                    type="button"
+                    key={comp.id}
+                    onClick={() => onSelect(comp.id)}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-navy-700"
+                    data-testid={`competitions-overview-row-${comp.id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          {competitionDisplayName(comp, t)}
+                        </span>
+                        <Badge variant="neutral" size="sm">
+                          {t(`teamSelect.kinds.${comp.kind ?? "League"}`)}
+                        </Badge>
+                        {isParticipating && (
+                          <Badge variant="primary" size="sm">
+                            <Users className="mr-0.5 inline h-3 w-3" />
+                            {t("tournaments.competitions.participating")}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                        {t("schedule.season", { number: comp.season })}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={
+                        status === "completed"
+                          ? "accent"
+                          : status === "inProgress"
+                            ? "primary"
+                            : "neutral"
+                      }
+                      size="sm"
+                    >
+                      {statusLabel(status)}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </CardBody>
+    </Card>
+  );
+}
+''', encoding="utf-8")
+
+competitions_overview_fixed = competitions_overview_path.read_text(encoding="utf-8")
+competitions_overview_fixed = competitions_overview_fixed.replace("\\`", "`").replace("\\${", "${")
+competitions_overview_path.write_text(competitions_overview_fixed, encoding="utf-8")
+
+print("CM Mundo competicoes mobile compact list applied")
+
+
 
 
 
