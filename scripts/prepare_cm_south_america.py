@@ -1149,7 +1149,7 @@ mobile_tweaks = {
     ],
     root / "src" / "components" / "hallOfFame" / "HallOfFameWorldTab.tsx": [
         ('<div className="space-y-5">', '<div className="space-y-3 md:space-y-5">'),
-        ('<CardBody className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">', '<CardBody className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-5"'),
+        ('<CardBody className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">', '<CardBody className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-5">'),
         ('className="text-2xl font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100"', 'className="text-lg font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100 md:text-2xl"'),
         ('<section className="space-y-4">', '<section className="space-y-3 md:space-y-4">'),
         ('className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"', 'className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4 xl:grid-cols-3"'),
