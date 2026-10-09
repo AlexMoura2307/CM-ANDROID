@@ -1278,6 +1278,40 @@ for path, pairs in final_mobile_tweaks.items():
 
 print("CM final mobile profile and schedule polish applied")
 
+# Finish the approved compact competition selector with search and level metadata.
+scope_panel_path = root / "src" / "pages" / "TeamSelectionScopePanel.tsx"
+scope_panel = scope_panel_path.read_text(encoding="utf-8")
+scope_panel = scope_panel.replace(
+    '  const [competitionFilter, setCompetitionFilter] = useState<CompetitionFilter>("all");',
+    '  const [competitionFilter, setCompetitionFilter] = useState<CompetitionFilter>("all");\n  const [competitionSearch, setCompetitionSearch] = useState("");',
+    1,
+)
+scope_panel = scope_panel.replace(
+    '  const filteredCompetitions = availableCompetitions.filter((competition) => {\n    if (competitionFilter === "all") return true;\n    if (competitionFilter === "league") return competition.kind === "League";\n    if (competitionFilter === "cup") return competition.kind === "Cup";\n    return competition.kind !== "League" && competition.kind !== "Cup";\n  });',
+    '  const competitionSearchQuery = competitionSearch.trim().toLocaleLowerCase(i18n.language);\n  const filteredCompetitions = availableCompetitions.filter((competition) => {\n    const filterMatches =\n      competitionFilter === "all" ||\n      (competitionFilter === "league" && competition.kind === "League") ||\n      (competitionFilter === "cup" && competition.kind === "Cup") ||\n      (competitionFilter === "other" && competition.kind !== "League" && competition.kind !== "Cup");\n    if (!filterMatches) return false;\n    if (!competitionSearchQuery) return true;\n    return compName(competition).toLocaleLowerCase(i18n.language).includes(competitionSearchQuery);\n  });',
+    1,
+)
+tabs_marker = '          <div className="flex overflow-hidden rounded-lg border border-navy-600">'
+search_block = '''          <input
+            type="search"
+            value={competitionSearch}
+            onChange={(event) => setCompetitionSearch(event.target.value)}
+            placeholder="Buscar competição"
+            className="w-full rounded-lg border border-navy-600 bg-navy-900 px-3 py-2.5 text-xs text-gray-100 outline-none placeholder:text-gray-500 focus:border-primary-500"
+          />
+
+'''
+if tabs_marker in scope_panel:
+    scope_panel = scope_panel.replace(tabs_marker, search_block + tabs_marker, 1)
+scope_panel = scope_panel.replace(
+    '                          <p className="truncate text-xs font-semibold text-gray-100">\n                            {compName(competition)}\n                          </p>',
+    '                          <p className="truncate text-xs font-semibold text-gray-100">\n                            {compName(competition)}\n                          </p>\n                          <p className="truncate text-[9px] text-gray-500">\n                            Nível {competition.priority ?? "—"} · {countryName(selectedCountryCode ?? competition.country_id ?? "", i18n.language)}\n                          </p>',
+    1,
+)
+scope_panel_path.write_text(scope_panel, encoding="utf-8")
+print("CM competition selector search and level metadata applied")
+
+
 
 
 
