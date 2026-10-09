@@ -1118,6 +1118,61 @@ competitions_overview_path.write_text(competitions_overview_fixed, encoding="utf
 
 print("CM Mundo competicoes mobile compact list applied")
 
+# Mundo: compact the remaining card-heavy views for portrait phones without
+# changing their data/actions. Desktop keeps the richer layouts.
+mobile_tweaks = {
+    root / "src" / "components" / "manager" / "ManagersWorldTab.tsx": [
+        ('<div className="space-y-5">', '<div className="space-y-3 md:space-y-5">'),
+        ('<CardBody className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">', '<CardBody className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between md:p-5">'),
+        ('className="text-2xl font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100"', 'className="text-lg font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100 md:text-2xl"'),
+        ('<div className="grid grid-cols-1 gap-5 xl:grid-cols-2">', '<div className="grid grid-cols-1 gap-3 md:gap-5 xl:grid-cols-2">'),
+        ('<CardBody className="space-y-4">', '<CardBody className="space-y-3 p-3 md:space-y-4 md:p-5">'),
+        ('className="mt-1 text-left text-xl font-heading font-bold uppercase tracking-wide text-accent-500 transition-colors hover:text-accent-400"', 'className="mt-1 text-left text-base font-heading font-bold uppercase tracking-wide text-accent-500 transition-colors hover:text-accent-400 md:text-xl"'),
+        ('className="mt-2 text-left text-xl font-heading font-bold uppercase tracking-wide text-primary-500 transition-colors hover:text-primary-400"', 'className="mt-2 text-left text-base font-heading font-bold uppercase tracking-wide text-primary-500 transition-colors hover:text-primary-400 md:text-xl"'),
+        ('className="mt-2 text-xl font-heading font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200"', 'className="mt-2 text-base font-heading font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200 md:text-xl"'),
+        ('className="grid grid-cols-3 gap-3 text-sm"', 'className="grid grid-cols-3 gap-2 text-sm md:gap-3"'),
+        ('className="rounded-lg bg-gray-50 p-3 dark:bg-navy-800/70"', 'className="rounded-lg bg-gray-50 p-2 dark:bg-navy-800/70 md:p-3"'),
+        ('className="text-lg font-heading font-bold text-gray-800 dark:text-gray-100"', 'className="text-base font-heading font-bold text-gray-800 dark:text-gray-100 md:text-lg"'),
+    ],
+    root / "src" / "components" / "transfers" / "TransferCentreWorldTab.tsx": [
+        ('<div className="space-y-5">', '<div className="space-y-3 md:space-y-5">'),
+        ('<CardBody className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">', '<CardBody className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between md:p-5">'),
+        ('className="text-2xl font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100"', 'className="text-lg font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100 md:text-2xl"'),
+        ('<div className="grid grid-cols-1 gap-5 xl:grid-cols-2">', '<div className="grid grid-cols-1 gap-3 md:gap-5 xl:grid-cols-2">'),
+        ('<CardBody className="space-y-4">', '<CardBody className="space-y-2 p-3 md:space-y-4 md:p-5">'),
+        ('className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-navy-600 dark:bg-navy-800/70"', 'className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-navy-600 dark:bg-navy-800/70 md:rounded-xl md:p-4"'),
+        ('className="text-left text-xl font-heading font-bold uppercase tracking-wide text-primary-500 transition-colors hover:text-primary-400"', 'className="text-left text-base font-heading font-bold uppercase tracking-wide text-primary-500 transition-colors hover:text-primary-400 md:text-xl"'),
+        ('className="text-left text-xl font-heading font-bold uppercase tracking-wide text-accent-500 transition-colors hover:text-accent-400"', 'className="text-left text-base font-heading font-bold uppercase tracking-wide text-accent-500 transition-colors hover:text-accent-400 md:text-xl"'),
+        ('className="mt-4 grid grid-cols-2 gap-3 text-sm"', 'className="mt-3 grid grid-cols-2 gap-2 text-sm md:mt-4 md:gap-3"'),
+        ('className="rounded-lg bg-white p-3 dark:bg-navy-700/70"', 'className="rounded-lg bg-white p-2 dark:bg-navy-700/70 md:p-3"'),
+        ('className="text-lg font-heading font-bold text-gray-800 dark:text-gray-100"', 'className="text-base font-heading font-bold text-gray-800 dark:text-gray-100 md:text-lg"'),
+    ],
+    root / "src" / "components" / "hallOfFame" / "HallOfFameWorldTab.tsx": [
+        ('<div className="space-y-5">', '<div className="space-y-3 md:space-y-5">'),
+        ('<CardBody className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">', '<CardBody className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-5"'),
+        ('className="text-2xl font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100"', 'className="text-lg font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100 md:text-2xl"'),
+        ('<section className="space-y-4">', '<section className="space-y-3 md:space-y-4">'),
+        ('className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"', 'className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4 xl:grid-cols-3"'),
+        ('className="grid grid-cols-1 gap-5 xl:grid-cols-2"', 'className="grid grid-cols-1 gap-3 md:gap-5 xl:grid-cols-2"'),
+        ('className="grid grid-cols-1 gap-4 xl:grid-cols-2"', 'className="grid grid-cols-1 gap-3 md:gap-4 xl:grid-cols-2"'),
+        ('<CardBody className="space-y-4">', '<CardBody className="space-y-3 p-3 md:space-y-4 md:p-5">'),
+        ('className="mt-2 text-xl font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100"', 'className="mt-2 text-base font-heading font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100 md:text-xl"'),
+        ('className="mt-1 text-left text-xl font-heading font-bold uppercase tracking-wide text-accent-500 transition-colors hover:text-accent-400"', 'className="mt-1 text-left text-base font-heading font-bold uppercase tracking-wide text-accent-500 transition-colors hover:text-accent-400 md:text-xl"'),
+        ('className="rounded-lg bg-gray-50 p-3 dark:bg-navy-800/70"', 'className="rounded-lg bg-gray-50 p-2 dark:bg-navy-800/70 md:p-3"'),
+        ('className="text-lg font-heading font-bold text-gray-800 dark:text-gray-100"', 'className="text-base font-heading font-bold text-gray-800 dark:text-gray-100 md:text-lg"'),
+    ],
+}
+
+for path, pairs in mobile_tweaks.items():
+    content = path.read_text(encoding="utf-8")
+    for old, new in pairs:
+        if old in content:
+            content = content.replace(old, new)
+    path.write_text(content, encoding="utf-8")
+
+print("CM Mundo mobile consistency sweep applied")
+
+
 
 
 
