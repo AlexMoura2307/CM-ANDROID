@@ -1172,6 +1172,79 @@ for path, pairs in mobile_tweaks.items():
 
 print("CM Mundo mobile consistency sweep applied")
 
+# Mundo > Jogadores: compact filters and the wide table on portrait phones.
+players_list_path = root / "src" / "components" / "players" / "PlayersListTab.tsx"
+players_list = players_list_path.read_text(encoding="utf-8")
+
+for old, new in [
+    (
+        '      <div className="flex flex-wrap gap-3 mb-4 items-center">',
+        '      <div className="mb-3 flex flex-col gap-2 md:mb-4 md:flex-row md:flex-wrap md:items-center md:gap-3">',
+    ),
+    (
+        '        <div className="relative flex-1 min-w-[200px] max-w-sm">',
+        '        <div className="relative w-full md:min-w-[200px] md:max-w-sm md:flex-1">',
+    ),
+    (
+        '          className="min-w-44 font-heading font-bold uppercase tracking-wider"',
+        '          className="w-full font-heading font-bold uppercase tracking-wider md:w-auto md:min-w-44"',
+    ),
+    (
+        '          <div className="overflow-x-auto">',
+        '          <div className="overflow-x-hidden md:overflow-x-auto">',
+    ),
+    (
+        '            <table className="w-full text-left border-collapse">',
+        '            <table className="w-full table-fixed border-collapse text-left max-md:[&_th]:px-2 max-md:[&_td]:px-2 max-md:[&_th:nth-child(4)]:hidden max-md:[&_td:nth-child(4)]:hidden max-md:[&_th:nth-child(5)]:hidden max-md:[&_td:nth-child(5)]:hidden max-md:[&_th:nth-child(6)]:hidden max-md:[&_td:nth-child(6)]:hidden max-md:[&_th:nth-child(8)]:hidden max-md:[&_td:nth-child(8)]:hidden md:table-auto">',
+    ),
+    (
+        '            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-navy-600">',
+        '            <div className="flex items-center justify-between gap-2 border-t border-gray-100 px-2 py-2.5 dark:border-navy-600 md:px-4 md:py-3">',
+    ),
+]:
+    if old in players_list:
+        players_list = players_list.replace(old, new, 1)
+
+players_list = players_list.replace(
+    '        <div className="flex gap-1.5">',
+    '        <div className="flex w-full gap-1.5 overflow-x-auto pb-0.5 md:w-auto md:overflow-visible md:pb-0">',
+    2,
+)
+
+name_cell_old = '''                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <PlayerAvatar player={summary} />
+                          <span className="font-semibold text-sm text-gray-800 dark:text-gray-200 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                            {summary.match_name}
+                          </span>
+                        </div>
+                      </td>'''
+name_cell_new = '''                      <td className="min-w-0 px-2 py-2.5 md:px-4">
+                        <div className="flex min-w-0 items-center gap-2 md:gap-3">
+                          <PlayerAvatar player={summary} />
+                          <div className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-gray-800 transition-colors group-hover:text-primary-600 dark:text-gray-200 dark:group-hover:text-primary-400">
+                              {summary.match_name}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[10px] text-gray-500 md:hidden">
+                              {summary.team_name ?? t("common.freeAgent")}
+                            </span>
+                          </div>
+                        </div>
+                      </td>'''
+if name_cell_old in players_list:
+    players_list = players_list.replace(name_cell_old, name_cell_new, 1)
+
+players_list = players_list.replace(
+    '                      <td className="py-2.5 px-4 text-sm text-gray-600 dark:text-gray-400 tabular-nums">',
+    '                      <td className="w-10 px-1 py-2.5 text-center text-xs tabular-nums text-gray-600 dark:text-gray-400 md:w-auto md:px-4 md:text-left md:text-sm">',
+    1,
+)
+
+players_list_path.write_text(players_list, encoding="utf-8")
+print("CM Mundo jogadores mobile compact table applied")
+
+
 
 
 
