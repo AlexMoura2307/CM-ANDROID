@@ -1244,6 +1244,41 @@ players_list = players_list.replace(
 players_list_path.write_text(players_list, encoding="utf-8")
 print("CM Mundo jogadores mobile compact table applied")
 
+# Final mobile consistency pass: profiles, schedule and tactics container spacing.
+final_mobile_tweaks = {
+    root / "src" / "components" / "playerProfile" / "PlayerProfile.tsx": [
+        ('className="mb-4 flex items-center justify-between gap-3"', 'className="mb-3 flex items-center justify-between gap-2 md:mb-4 md:gap-3"'),
+        ('className="mb-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-navy-600 dark:bg-navy-800"', 'className="mb-3 flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 dark:border-navy-600 dark:bg-navy-800 md:mb-4 md:gap-3 md:rounded-xl md:px-4 md:py-3"'),
+        ('className="grid grid-cols-1 lg:grid-cols-3 gap-5"', 'className="grid grid-cols-1 gap-3 md:gap-5 lg:grid-cols-3"'),
+        ('className="grid grid-cols-1 gap-5 mt-5"', 'className="mt-3 grid grid-cols-1 gap-3 md:mt-5 md:gap-5"'),
+    ],
+    root / "src" / "components" / "teamProfile" / "TeamProfile.tsx": [
+        ('className="max-w-6xl mx-auto"', 'className="mx-auto w-full max-w-6xl"'),
+        ('className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors mb-4"', 'className="mb-3 flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 md:mb-4"'),
+        ('className="grid grid-cols-1 lg:grid-cols-3 gap-5"', 'className="grid grid-cols-1 gap-3 md:gap-5 lg:grid-cols-3"'),
+    ],
+    root / "src" / "components" / "schedule" / "ScheduleTab.tsx": [
+        ('className="mb-5 flex flex-wrap gap-2"', 'className="mb-3 flex gap-1.5 overflow-x-auto pb-1 md:mb-5 md:flex-wrap md:gap-2 md:overflow-visible md:pb-0"'),
+        ('wrapperClassName="ml-auto"', 'wrapperClassName="w-full shrink-0 md:ml-auto md:w-auto"'),
+        ('className="flex flex-col gap-5"', 'className="flex flex-col gap-3 md:gap-5"'),
+    ],
+    root / "src" / "components" / "tactics" / "TacticsTab.tsx": [
+        ('className="flex w-full flex-col gap-5"', 'className="flex w-full flex-col gap-3 md:gap-5"'),
+        ('className="grid grid-cols-1 gap-5 xl:grid-cols-[260px_1fr_270px] xl:items-start"', 'className="grid grid-cols-1 gap-3 md:gap-5 xl:grid-cols-[260px_1fr_270px] xl:items-start"'),
+        ('className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4"', 'className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4"'),
+    ],
+}
+
+for path, pairs in final_mobile_tweaks.items():
+    content = path.read_text(encoding="utf-8")
+    for old, new in pairs:
+        if old in content:
+            content = content.replace(old, new, 1)
+    path.write_text(content, encoding="utf-8")
+
+print("CM final mobile profile and schedule polish applied")
+
+
 
 
 
