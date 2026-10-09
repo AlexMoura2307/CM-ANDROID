@@ -1311,6 +1311,52 @@ scope_panel = scope_panel.replace(
 scope_panel_path.write_text(scope_panel, encoding="utf-8")
 print("CM competition selector search and level metadata applied")
 
+# Remaining mobile screens: compact spacing/hero sizes without changing behaviour.
+remaining_mobile_tweaks = {
+    root / "src" / "components" / "finances" / "FinancesTab.tsx": [
+        ('className="grid grid-cols-1 lg:grid-cols-3 gap-5"', 'className="grid grid-cols-1 gap-3 md:gap-5 lg:grid-cols-3"'),
+        ('className="font-heading font-bold text-2xl text-gray-800 dark:text-gray-100 mt-1"', 'className="mt-1 font-heading text-xl font-bold text-gray-800 dark:text-gray-100 md:text-2xl"'),
+        ('className="font-heading font-bold text-2xl text-gray-900 dark:text-gray-100"', 'className="font-heading text-xl font-bold text-gray-900 dark:text-gray-100 md:text-2xl"'),
+    ],
+    root / "src" / "components" / "scouting" / "ScoutingTab.tsx": [
+        ('className="flex flex-col gap-5"', 'className="flex flex-col gap-3 md:gap-5"'),
+    ],
+    root / "src" / "components" / "youthAcademy" / "YouthAcademyTab.tsx": [
+        ('className="flex flex-col gap-5"', 'className="flex flex-col gap-3 md:gap-5"'),
+        ('className="grid grid-cols-2 md:grid-cols-4 gap-4"', 'className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4"'),
+        ('className="font-heading font-bold text-2xl text-gray-800 dark:text-gray-100"', 'className="font-heading text-xl font-bold text-gray-800 dark:text-gray-100 md:text-2xl"'),
+        ('className="font-heading font-bold text-2xl text-accent-500"', 'className="font-heading text-xl font-bold text-accent-500 md:text-2xl"'),
+    ],
+    root / "src" / "components" / "news" / "NewsTab.tsx": [
+        ('className="flex flex-col gap-5"', 'className="flex flex-col gap-3 md:gap-5"'),
+        ('className="p-6"', 'className="p-3 md:p-6"'),
+        ('className="text-2xl font-heading font-bold text-gray-900 dark:text-white leading-tight mb-4"', 'className="mb-3 font-heading text-xl font-bold leading-tight text-gray-900 dark:text-white md:mb-4 md:text-2xl"'),
+        ('className="text-2xl font-heading font-bold text-primary-500 bg-primary-500/10 px-4 py-2 rounded-xl"', 'className="rounded-lg bg-primary-500/10 px-3 py-2 font-heading text-xl font-bold text-primary-500 md:rounded-xl md:px-4 md:text-2xl"'),
+    ],
+    root / "src" / "components" / "manager" / "ManagerTab.tsx": [
+        ('className="grid grid-cols-1 md:grid-cols-3 gap-5"', 'className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-5"'),
+        ('className="bg-gradient-to-r from-navy-700 to-navy-800 p-6 rounded-t-xl flex items-center gap-6"', 'className="flex items-center gap-3 rounded-t-xl bg-gradient-to-r from-navy-700 to-navy-800 p-3 md:gap-6 md:p-6"'),
+        ('className="text-2xl font-heading font-bold text-white uppercase tracking-wide"', 'className="font-heading text-xl font-bold uppercase tracking-wide text-white md:text-2xl"'),
+        ('className="font-heading font-bold text-2xl text-accent-400"', 'className="font-heading text-xl font-bold text-accent-400 md:text-2xl"'),
+        ('className="grid grid-cols-3 md:grid-cols-6 gap-3"', 'className="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3"'),
+    ],
+    root / "src" / "components" / "transfers" / "TransfersTab.tsx": [
+        ('className="bg-gradient-to-r from-navy-700 to-navy-800 p-5 rounded-t-xl flex items-center gap-6"', 'className="flex items-center gap-3 rounded-t-xl bg-gradient-to-r from-navy-700 to-navy-800 p-3 md:gap-6 md:p-5"'),
+        ('className="overflow-x-auto"', 'className="overflow-x-auto overscroll-x-contain"'),
+        ('className="rounded-lg bg-gray-50 p-6 text-sm text-gray-600 dark:bg-navy-900/50 dark:text-gray-300"', 'className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600 dark:bg-navy-900/50 dark:text-gray-300 md:p-6"'),
+    ],
+}
+
+for path, pairs in remaining_mobile_tweaks.items():
+    content = path.read_text(encoding="utf-8")
+    for old, new in pairs:
+        if old in content:
+            content = content.replace(old, new, 1)
+    path.write_text(content, encoding="utf-8")
+
+print("CM remaining mobile screens compacted")
+
+
 
 
 
