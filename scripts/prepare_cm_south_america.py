@@ -707,6 +707,81 @@ team_grid_path.write_text(team_grid_fixed, encoding="utf-8")
 
 print("FM14-style mobile club selection list applied")
 
+# Compact the full team-selection shell for true portrait-phone use.
+team_selection_path = root / "src" / "pages" / "TeamSelection.tsx"
+team_selection = team_selection_path.read_text(encoding="utf-8")
+replacements = [
+    (
+        'className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-navy-700 dark:bg-navy-800"',
+        'className="sticky top-0 z-20 flex items-center justify-between border-b border-gray-200 bg-white px-3 py-3 shadow-sm dark:border-navy-700 dark:bg-navy-800 md:px-6 md:py-4"',
+    ),
+    (
+        'className="flex items-center gap-4"',
+        'className="flex min-w-0 items-center gap-2 md:gap-4"',
+    ),
+    (
+        'className="font-heading text-xl font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100"',
+        'className="truncate font-heading text-base font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 md:text-xl"',
+    ),
+    (
+        'className="mt-0.5 text-xs text-gray-500 dark:text-gray-400"',
+        'className="mt-0.5 hidden text-xs text-gray-500 dark:text-gray-400 md:block"',
+    ),
+    (
+        'className="flex items-center gap-3"',
+        'className="flex shrink-0 items-center gap-1.5 md:gap-3"',
+    ),
+    (
+        'className={`flex items-center gap-2 rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 px-6 py-2.5 font-heading text-sm font-bold uppercase tracking-wider text-white shadow-md transition-all hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/20 ${',
+        'className={`flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 px-3 py-2 font-heading text-[11px] font-bold uppercase tracking-wide text-white shadow-md transition-all hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/20 md:gap-2 md:px-6 md:py-2.5 md:text-sm md:tracking-wider ${',
+    ),
+    (
+        'className="space-y-5 p-6"',
+        'className="space-y-3 p-3 pb-6 md:space-y-5 md:p-6"',
+    ),
+    (
+        'className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]"',
+        'className="grid gap-3 md:gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]"',
+    ),
+]
+for old, new in replacements:
+    if old not in team_selection:
+        raise RuntimeError(f"TeamSelection mobile marker not found: {old[:70]}")
+    team_selection = team_selection.replace(old, new, 1)
+team_selection_path.write_text(team_selection, encoding="utf-8")
+
+sidebar_path = root / "src" / "pages" / "TeamSelectionSidebar.tsx"
+sidebar = sidebar_path.read_text(encoding="utf-8")
+sidebar = sidebar.replace(
+    '    <Card accent="accent" className="h-fit">',
+    '    <Card accent="accent" className="h-fit overflow-hidden">',
+    1,
+)
+sidebar = sidebar.replace(
+    '      <CardBody className="space-y-5 p-5">',
+    '      <CardBody className="space-y-3 p-3 md:space-y-5 md:p-5">',
+    1,
+)
+sidebar = sidebar.replace(
+    'className="mt-1 font-heading text-2xl font-bold text-gray-900 dark:text-white"',
+    'className="mt-1 truncate font-heading text-lg font-bold text-gray-900 dark:text-white md:text-2xl"',
+    1,
+)
+sidebar = sidebar.replace(
+    'className="grid grid-cols-2 gap-3"',
+    'className="grid grid-cols-4 gap-2 md:grid-cols-2 md:gap-3"',
+    1,
+)
+sidebar = sidebar.replace(
+    'className="space-y-2"',
+    'className="grid grid-cols-1 gap-1.5 md:space-y-2"',
+    1,
+)
+sidebar_path.write_text(sidebar, encoding="utf-8")
+
+print("CM mobile team-selection shell compacted")
+
+
 
 # CM diagnostic: stage initial save writes so real-device save failures are
 # reproducible in CI against the same consolidated South America package.
