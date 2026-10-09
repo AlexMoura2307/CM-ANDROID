@@ -781,6 +781,140 @@ sidebar_path.write_text(sidebar, encoding="utf-8")
 
 print("CM mobile team-selection shell compacted")
 
+# Mundo > Clubes: compact FM-style list on phones, richer cards on desktop.
+teams_list_path = root / "src" / "components" / "teams" / "TeamsListTab.tsx"
+teams_list = teams_list_path.read_text(encoding="utf-8")
+
+old_grid = '''                      {leagueOpen && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-2">
+                          {league.teams.map((card) => (
+                            <TeamCardView
+                              key={card.team.id}
+                              card={card}
+                              isUser={card.team.id === userTeamId}
+                              language={i18n.language}
+                              t={t}
+                              onSelect={onSelectTeam}
+                            />
+                          ))}
+                        </div>
+                      )}'''
+
+new_grid = '''                      {leagueOpen && (
+                        <div className="pl-2">
+                          <div className="overflow-hidden rounded-lg border border-navy-600 md:hidden">
+                            <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_3rem_1.75rem] items-center gap-2 border-b border-navy-600 bg-navy-800 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-gray-500">
+                              <span />
+                              <span>Clube</span>
+                              <span className="text-center">OVR</span>
+                              <span />
+                            </div>
+                            {league.teams.map((card) => (
+                              <MobileTeamRow
+                                key={card.team.id}
+                                card={card}
+                                isUser={card.team.id === userTeamId}
+                                language={i18n.language}
+                                t={t}
+                                onSelect={onSelectTeam}
+                              />
+                            ))}
+                          </div>
+
+                          <div className="hidden grid-cols-1 gap-3 md:grid md:grid-cols-2">
+                            {league.teams.map((card) => (
+                              <TeamCardView
+                                key={card.team.id}
+                                card={card}
+                                isUser={card.team.id === userTeamId}
+                                language={i18n.language}
+                                t={t}
+                                onSelect={onSelectTeam}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}'''
+
+if old_grid not in teams_list:
+    raise RuntimeError("TeamsListTab grid marker not found")
+teams_list = teams_list.replace(old_grid, new_grid, 1)
+
+mobile_component = r'''
+function MobileTeamRow({
+  card,
+  isUser,
+  language,
+  t,
+  onSelect,
+}: {
+  card: TeamCard;
+  isUser: boolean;
+  language: string;
+  t: ReturnType<typeof useTranslation>["t"];
+  onSelect: (id: string) => void;
+}) {
+  const { team, roster_size: rosterSize, avg_ovr: avgOvr, league_pos: leaguePos } = card;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(team.id)}
+      className={`grid w-full grid-cols-[2.5rem_minmax(0,1fr)_3rem_1.75rem] items-center gap-2 border-b border-navy-700 px-3 py-2.5 text-left last:border-b-0 ${
+        isUser ? "bg-primary-950/35" : "bg-navy-900 active:bg-navy-800"
+      }`}
+    >
+      <TeamLogo
+        team={team}
+        className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white/10 text-xs font-bold text-gray-300"
+        imageClassName="h-8 w-8 object-contain"
+      />
+
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className={`truncate text-xs font-bold ${isUser ? "text-primary-300" : "text-gray-100"}`}>
+            {team.name}
+          </p>
+          {isUser && (
+            <span className="shrink-0 rounded bg-primary-500/20 px-1 py-0.5 text-[8px] font-bold uppercase text-primary-300">
+              {t("teams.yourTeam")}
+            </span>
+          )}
+        </div>
+        <TeamLocation
+          city={team.city}
+          countryCode={team.country}
+          locale={language}
+          className="mt-0.5 truncate text-[10px] text-gray-500"
+          iconClassName="h-2.5 w-2.5"
+          flagClassName="text-[10px] leading-none"
+        />
+        <p className="mt-0.5 text-[9px] text-gray-500">
+          {rosterSize} jogadores{leaguePos > 0 ? ` · #${leaguePos}` : ""}
+        </p>
+      </div>
+
+      <div className="text-center">
+        <p className="text-[9px] uppercase tracking-wide text-gray-500">OVR</p>
+        <p className="font-heading text-sm font-bold text-primary-400">{avgOvr}</p>
+      </div>
+
+      <ChevronRight className="h-4 w-4 text-gray-600" />
+    </button>
+  );
+}
+
+'''
+
+insert_marker = 'function TeamCardView({'
+if insert_marker not in teams_list:
+    raise RuntimeError("TeamCardView marker not found")
+teams_list = teams_list.replace(insert_marker, mobile_component + insert_marker, 1)
+teams_list_path.write_text(teams_list, encoding="utf-8")
+
+print("CM Mundo clubes mobile compact list applied")
+
+
 
 
 # CM diagnostic: stage initial save writes so real-device save failures are
