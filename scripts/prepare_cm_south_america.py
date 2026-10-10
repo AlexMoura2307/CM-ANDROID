@@ -1862,3 +1862,5 @@ mod cm_full_package_persistence_test {
     game_mod_path.write_text(game_mod, encoding="utf-8")
 
 print("CM full-package persistence regression instrumentation applied")
+
+# CM Android build trigger: tactics selector fix
