@@ -1495,6 +1495,20 @@ compact_summary = '''              <p className="mt-1 truncate text-base font-he
               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                 {formation} · {t(`common.playStyles.${activePlayStyle}`, activePlayStyle)}
               </p>
+              <div className="mt-2">
+                <Select
+                  value={activeTactic.id}
+                  onChange={(event) => onSelectTactic(event.target.value)}
+                  fullWidth
+                  aria-label={t("tactics.chooseTactic")}
+                >
+                  {tacticLibrary.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name} — {entry.formation}
+                    </option>
+                  ))}
+                </Select>
+              </div>
 '''
 command = command.replace(description, compact_summary, 1)
 
