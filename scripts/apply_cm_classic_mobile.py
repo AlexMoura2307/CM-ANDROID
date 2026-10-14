@@ -66,5 +66,25 @@ if marker not in body:
         + '      </div>}\n'
     )
     body = body[:start] + new + body[end:]
+    # Remove obsolete tab-only imports, tactical role variables and handler.
+    body = body.replace('import { ArrowLeft, BarChart3, Briefcase, CalendarDays, Clock3, History, ListChecks, SlidersHorizontal } from "lucide-react";', 'import { ArrowLeft } from "lucide-react";')
+    for statement in (
+        'import { Card, CardBody, CardHeader, Select } from "../ui";',
+        'import { getRoleOptions } from "../../lib/playerRoles";',
+        'import { getDeployedPosition } from "../squad/SquadTab.helpers";',
+        'import { setPlayerRole as setPlayerRoleService } from "../../services/squadService";',
+        'import type { PlayerRole } from "../../store/types";',
+    ):
+        body = body.replace(statement + chr(10), '')
+    a = body.find('  const currentTacticalRole:')
+    b = body.find('  const teamName =', a)
+    if a < 0 or b < 0:
+        raise SystemExit("Tactical role variables missing")
+    body = body[:a] + body[b:]
+    a = body.find('  async function handleTacticalRoleChange(')
+    b = body.find('  return (' + chr(10) + '    <div>', a)
+    if a < 0 or b < 0:
+        raise SystemExit("Tactical role handler missing")
+    body = body[:a] + body[b:]
     profile.write_text(body, encoding="utf-8")
     print("CM classic profile applied after existing CM tab customization")
