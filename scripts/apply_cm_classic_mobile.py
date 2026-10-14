@@ -105,5 +105,23 @@ if marker not in body:
     )
     body = body[:start] + new + body[end:]
     body = body.replace('import { ArrowLeft, BarChart3, Briefcase, CalendarDays, Clock3, History, ListChecks, SlidersHorizontal } from "lucide-react";', 'import { ArrowLeft } from "lucide-react";')
+    # Fail the build if the compact view loses player actions or club permissions.
+    required = (
+        'cm-classic-history-toggle',
+        'PlayerProfileAttributesCard',
+        'PlayerProfileContractCard',
+        'PlayerProfileCareerHistoryCard',
+        'PlayerProfileMovementHistoryCard',
+        'isOwnClub && onGameUpdate',
+        'handleTacticalRoleChange',
+        'tacticalRoleOptions.map',
+        'contractActionError',
+        '{bidTarget && (',
+    )
+    missing = [item for item in required if item not in body]
+    if missing:
+        raise SystemExit("CM compact profile regression: " + ", ".join(missing))
+    if body.count('cm-classic-history-toggle') != 1:
+        raise SystemExit("CM compact profile duplicated")
     profile.write_text(body, encoding="utf-8")
     print("CM classic profile applied after existing CM tab customization")
