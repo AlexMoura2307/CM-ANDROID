@@ -33,8 +33,8 @@ if not profile.is_file():
 body = profile.read_text(encoding="utf-8")
 if "cm-classic-history-toggle" not in body:
     changes = [
-        ('import { ArrowLeft } from "lucide-react";',
-         'import { ArrowLeft } from "lucide-react";\nimport { useState } from "react";'),
+        ('import { getContractRiskLevel, getPlayerOvr } from "../../lib/helpers";',
+         'import { useState } from "react";\\nimport { getContractRiskLevel, getPlayerOvr } from "../../lib/helpers";'),
         ('  const { t, i18n } = useTranslation();',
          '  const { t, i18n } = useTranslation();\n  const [historyVisible, setHistoryVisible] = useState(false);'),
         ('<div className="grid grid-cols-1 lg:grid-cols-3 gap-5">',
