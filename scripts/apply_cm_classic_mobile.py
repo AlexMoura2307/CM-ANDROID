@@ -44,7 +44,7 @@ if marker not in body:
     old = body[start:end]
     def component(name):
         import re
-        found = re.search(r'<'+name+r'\b[\s\S]*?\n        />', old)
+        found = re.search(r'<'+name+r'\b[\s\S]*?/>', old)
         if not found:
             raise SystemExit("Missing profile component: " + name)
         return found.group(0)
