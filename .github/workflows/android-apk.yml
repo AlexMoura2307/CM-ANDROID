@@ -53,6 +53,7 @@ jobs:
         run: |
           python3 scripts/prepare_cm.py
           python3 scripts/prepare_cm_south_america.py
+          python3 scripts/apply_cm_classic_mobile.py
           mkdir -p upstream/src-tauri/resources
           cp final-data/CM_SOUTH_AMERICA_2026.ofm upstream/src-tauri/resources/cm-south-america-2026.ofm
 
