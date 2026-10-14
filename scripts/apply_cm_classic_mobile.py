@@ -57,6 +57,44 @@ if marker not in body:
         '      {/* cm-classic-history-toggle: compact player profile */}\n'
         + '      <div className="space-y-3">\n'
         + attrs + '\n' + contract + '\n'
+        + '''        <Card>
+          <CardHeader>{t("playerProfile.roleAndDuty")}</CardHeader>
+          <CardBody>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-navy-600 dark:bg-navy-700/40">
+                <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                  {t("tactics.playerRoleLabel")}
+                </p>
+                <p className="mt-1 font-heading font-bold text-gray-800 dark:text-gray-100">
+                  {t(`tactics.playerRoles.${currentTacticalRole}`, currentTacticalRole)}
+                </p>
+              </div>
+
+              {isOwnClub && onGameUpdate ? (
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-navy-600 dark:bg-navy-700/40">
+                  <p className="mb-2 text-[10px] font-heading font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                    {t("playerProfile.changeRole")}
+                  </p>
+                  <Select
+                    selectSize="sm"
+                    value={currentTacticalRole}
+                    onChange={(e) => {
+                      void handleTacticalRoleChange(e.target.value as PlayerRole);
+                    }}
+                    aria-label={t("tactics.playerRoleLabel")}
+                  >
+                    {tacticalRoleOptions.map((role) => (
+                      <option key={role} value={role}>
+                        {t(`tactics.playerRoles.${role}`, role)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+          </CardBody>
+        </Card>
+'''+ '\n'
         + '      </div>\n'
         + '      {contractActionError ? <p role="alert" className="mt-2 text-sm text-red-600">{contractActionError}</p> : null}\n'
         + '      <button type="button" className="mt-3 w-full rounded border px-3 py-2 text-sm" onClick={() => setActiveProfileSection(activeProfileSection === "career" ? "attributes" : "career")} aria-expanded={activeProfileSection === "career"}>{activeProfileSection === "career" ? "Ocultar histórico" : "Histórico"}</button>\n'
@@ -66,25 +104,5 @@ if marker not in body:
         + '      </div>}\n'
     )
     body = body[:start] + new + body[end:]
-    # Remove obsolete tab-only imports, tactical role variables and handler.
-    body = body.replace('import { ArrowLeft, BarChart3, Briefcase, CalendarDays, Clock3, History, ListChecks, SlidersHorizontal } from "lucide-react";', 'import { ArrowLeft } from "lucide-react";')
-    for statement in (
-        'import { Card, CardBody, CardHeader, Select } from "../ui";',
-        'import { getRoleOptions } from "../../lib/playerRoles";',
-        'import { getDeployedPosition } from "../squad/SquadTab.helpers";',
-        'import { setPlayerRole as setPlayerRoleService } from "../../services/squadService";',
-        'import type { PlayerRole } from "../../store/types";',
-    ):
-        body = body.replace(statement + chr(10), '')
-    a = body.find('  const currentTacticalRole:')
-    b = body.find('  const teamName =', a)
-    if a < 0 or b < 0:
-        raise SystemExit("Tactical role variables missing")
-    body = body[:a] + body[b:]
-    a = body.find('  async function handleTacticalRoleChange(')
-    b = body.find('  return (' + chr(10) + '    <div>', a)
-    if a < 0 or b < 0:
-        raise SystemExit("Tactical role handler missing")
-    body = body[:a] + body[b:]
     profile.write_text(body, encoding="utf-8")
     print("CM classic profile applied after existing CM tab customization")
