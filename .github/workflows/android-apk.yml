@@ -18,6 +18,7 @@ on:
     branches: [main]
     paths:
       - "scripts/prepare_cm_south_america.py"
+      - "scripts/apply_cm_classic_mobile.py"
       - ".github/workflows/android-apk.yml"
 
 concurrency:
