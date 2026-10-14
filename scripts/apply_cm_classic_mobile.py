@@ -33,7 +33,7 @@ body = profile.read_text(encoding="utf-8")
 marker = "cm-classic-history-toggle"
 if marker not in body:
     start = body.find('  const profileSections = [')
-    end = body.find('  return (\\n    <div>', start)
+    end = body.find('  return (\n    <div>', start)
     if start < 0 or end < 0:
         raise SystemExit("Profile section definition not found")
     body = body[:start] + body[end:]
@@ -44,7 +44,7 @@ if marker not in body:
     old = body[start:end]
     def component(name):
         import re
-        found = re.search(r'<'+name+r'\\b[\\s\\S]*?\\n        />', old)
+        found = re.search(r'<'+name+r'\b[\s\S]*?\n        />', old)
         if not found:
             raise SystemExit("Missing profile component: " + name)
         return found.group(0)
@@ -54,16 +54,16 @@ if marker not in body:
     # Recent matches are optional and already guarded by the original implementation.
     recent = '<PlayerProfileRecentMatchesCard matches={recentMatches} t={t} />'
     new = (
-        '      {/* cm-classic-history-toggle: compact player profile */}\\n'
-        + '      <div className="space-y-3">\\n'
-        + attrs + '\\n' + contract + '\\n'
-        + '      </div>\\n'
-        + '      {contractActionError ? <p role="alert" className="mt-2 text-sm text-red-600">{contractActionError}</p> : null}\\n'
-        + '      <button type="button" className="mt-3 w-full rounded border px-3 py-2 text-sm" onClick={() => setActiveProfileSection(activeProfileSection === "career" ? "attributes" : "career")} aria-expanded={activeProfileSection === "career"}>{activeProfileSection === "career" ? "Ocultar histórico" : "Histórico"}</button>\\n'
-        + '      {activeProfileSection === "career" && <div className="mt-3 space-y-3">\\n'
-        + '\\n'.join(history) + '\\n'
-        + '      {recentMatches.length > 0 ? ' + recent + ' : null}\\n'
-        + '      </div>}\\n'
+        '      {/* cm-classic-history-toggle: compact player profile */}\n'
+        + '      <div className="space-y-3">\n'
+        + attrs + '\n' + contract + '\n'
+        + '      </div>\n'
+        + '      {contractActionError ? <p role="alert" className="mt-2 text-sm text-red-600">{contractActionError}</p> : null}\n'
+        + '      <button type="button" className="mt-3 w-full rounded border px-3 py-2 text-sm" onClick={() => setActiveProfileSection(activeProfileSection === "career" ? "attributes" : "career")} aria-expanded={activeProfileSection === "career"}>{activeProfileSection === "career" ? "Ocultar histórico" : "Histórico"}</button>\n'
+        + '      {activeProfileSection === "career" && <div className="mt-3 space-y-3">\n'
+        + '\n'.join(history) + '\n'
+        + '      {recentMatches.length > 0 ? ' + recent + ' : null}\n'
+        + '      </div>}\n'
     )
     body = body[:start] + new + body[end:]
     profile.write_text(body, encoding="utf-8")
