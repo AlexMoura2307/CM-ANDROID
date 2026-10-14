@@ -104,5 +104,6 @@ if marker not in body:
         + '      </div>}\n'
     )
     body = body[:start] + new + body[end:]
+    body = body.replace('import { ArrowLeft, BarChart3, Briefcase, CalendarDays, Clock3, History, ListChecks, SlidersHorizontal } from "lucide-react";', 'import { ArrowLeft } from "lucide-react";')
     profile.write_text(body, encoding="utf-8")
     print("CM classic profile applied after existing CM tab customization")
